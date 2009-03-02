@@ -1,0 +1,10 @@
+releases
+release_local
+lib/s3/test/*.beam
+lib/*/ebin
+erlang_config.rb
+.depend_erlang.mf
+bin/connect_local
+bin/start_erl_local
+bin/start_local
+erl_crash.dump

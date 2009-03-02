@@ -1,0 +1,12 @@
+%% -*-erlang-*-   ; 
+{release,
+ {"s3", ""},
+ {erts, "_"},
+ [{kernel, "_"},
+  {stdlib, "_"},
+  {sasl, "_"},
+  {crypto, "_"},
+  {xmerl, "_"},
+  {inets, "_"},
+  {s3, "_"}]
+}.

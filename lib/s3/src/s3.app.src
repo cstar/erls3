@@ -1,0 +1,9 @@
+{application, s3,
+ [{description, "Access to S3 via REST interface"},
+  {author, "Eric Cestari"},
+  {vsn, %VSN%},
+  {modules, %MODULES%},
+  {mod, {s3,[]}},
+  {registered, [s3sup]},
+  {applications, [kernel, stdlib, sasl, crypto, inets, xmerl]}
+ ]}.

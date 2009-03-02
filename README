@@ -1,0 +1,86 @@
+erls3: an erlang wrapper for Amazon's S3 storage service
+--------------------------------------------------------
+
+Initial Author:  Andrew Birkett <andy@nobugs.org>
+Author : Eric Cestari <eric@ohmforce.com>
+Version: 0.3
+Date:    2009/03/02
+
+What is it?
+-----------
+
+Amazon's S3 storage service is a "pay as you go" service for storing
+files.  You can use it to serve web content, backup your files, etc.
+
+This s3erl library provides easy access to S3 for erlang applications.
+
+More info at: http://www.amazon.com/b?node=16427261
+
+Requirements
+------------
+
+- OTP-R12B (released on 2007/12/05).  Required due to a bug in inets'
+  handling of the HTTP 204 code [bug OTP-6982] which is heavily used by
+  S3.  Get it at http://erlang.org/download.html
+
+- An Amazon Web Services account - see http://www.amazonaws.com
+
+- rake and ruby
+
+= BUILDING =
+
+Type rake.
+The first time, you will need to edit erlang_config.rb.
+Re-run rake
+
+= Configuration = 
+
+You'll need to set your credentials to Amazon SDB :
+- by passing them as OTP application parameters or
+- by setting the AMAZON_ACCESS_KEY_ID and AMAZON_SECRET_ACCESS_KEY environment variable (recommended)
+
+= TODO = 
+- Implement Content-MD5 checking
+- automatically retry in case of transient failure
+- Improve error handling
+- Support for EU-based S3 buckets
+- Support for streaming objects to/from disk (inets supports streaming
+    to disk, but not from disk just now) (harder)
+- Usage will probably show some bugs and their ugly faces.
+
+Version History
+---------------
+v0.3 - 2009/03/02
+
+  - imported into github
+  - OTP'fied the code
+  - http calls are now asynchronous
+  - SSL supported
+ 
+
+v0.2 - 2007/12/29
+
+  - Fix timezone bug in Date: header
+
+v0.1 - 2007/12/07
+
+  - First release, "works for me" (tm)
+  - Bucket operations: list, create, delete
+  - Object operations: read, write, list, delete
+
+ Missing features:
+
+
+License
+-------
+
+Released under the GNU General Public License v2.
+
+Feedback
+--------
+
+Thanks for using github for patches.
+
+From Eric to Andy
+------------------
+Thanks for the code mate !
