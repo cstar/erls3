@@ -2,7 +2,7 @@ erls3: an erlang wrapper for Amazon's S3 storage service
 --------------------------------------------------------
 
 Initial Author:  Andrew Birkett <andy@nobugs.org>
-Author : Eric Cestari <eric@ohmforce.com>
+Author : Eric Cestari <eric@ohmforce.com> http://www.cestari.info/ http://twitter.com/cstar
 Version: 0.3
 Date:    2009/03/02
 
