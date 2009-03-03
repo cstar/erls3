@@ -120,7 +120,7 @@ handle_call({policy, {obj, Attrs}=Policy}, _From, #state{access_key=Access, secr
   Enc =base64:encode(
         rfc4627:encode(Policy)),
   Signature = base64:encode(crypto:sha_mac(Secret, Enc)),
-  {reply, {Access, binary_to_list(Enc), binary_to_list(Signature), Attributes }, State}.
+  {reply, {Access, binary_to_list(Enc), binary_to_list(Signature), [Attributes |{"file", <<"">>}] }, State}.
   
 %%--------------------------------------------------------------------
 %% Function: handle_cast(Msg, State) -> {noreply, State} |
