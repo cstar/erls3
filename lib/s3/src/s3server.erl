@@ -67,17 +67,17 @@ init([Access, Secret, SSL, Timeout]) ->
 
 % Bucket operations
 handle_call({listbuckets}, From, State) ->
-    genericRequest(From, State, get, "", "", [], <<>>, "", fun xmlToBuckets/2 );
+    genericRequest(From, State, get, "", "", [],[], <<>>, "", fun xmlToBuckets/2 );
 
 handle_call({ put, Bucket }, From, State) ->
-    genericRequest(From, State, put, Bucket, "", [],  <<>>, "", fun(_,_) -> ok end);
+    genericRequest(From, State, put, Bucket, "", [], [], <<>>, "", fun(_,_) -> ok end);
 
 handle_call({delete, Bucket }, From, State) ->
-    genericRequest(From, State, delete, Bucket, "", [], <<>>, "", fun(_,_) -> ok end);
+    genericRequest(From, State, delete, Bucket, "", [], [],<<>>, "", fun(_,_) -> ok end);
 
 % Object operations
-handle_call({put, Bucket, Key, Content, ContentType }, From, State) ->
-    genericRequest(From, State, put, Bucket, Key, [], Content, ContentType, fun(_X, Headers) -> 
+handle_call({put, Bucket, Key, Content, ContentType, Metadata}, From, State) ->
+    genericRequest(From, State, put, Bucket, Key, [], Metadata, Content, ContentType, fun(_X, Headers) -> 
             {value,{"etag",ETag}} = lists:keysearch( "etag", 1, Headers ),
             {ok, ETag}
         end);
@@ -85,13 +85,27 @@ handle_call({put, Bucket, Key, Content, ContentType }, From, State) ->
 
 handle_call({ list, Bucket, Options }, From, State) ->
     Headers = lists:map( fun option_to_param/1, Options ),
-    genericRequest(From, State, get, Bucket, "", Headers,<<>>, "",  fun parseBucketListXml/2 );
+    genericRequest(From, State, get, Bucket, "", Headers, [], <<>>, "",  fun parseBucketListXml/2 );
 
 handle_call({ get, Bucket, Key }, From, State) ->
-    genericRequest(From, State, get,  Bucket, Key, [], <<>>, "", fun(B, H) -> {B,H} end);
+    genericRequest(From, State, get,  Bucket, Key, [], [], <<>>, "", fun(B, H) -> {B,H} end);
+
+handle_call({ head, Bucket, Key }, From, State) ->
+    genericRequest(From, State, head,  Bucket, Key, [], [], <<>>, "", fun(_, H) -> H end);
 
 handle_call({delete, Bucket, Key }, From, State) ->
-    genericRequest(From, State, delete, Bucket, Key, [], <<>>, "", fun(_,_) -> ok end).
+    genericRequest(From, State, delete, Bucket, Key, [], [], <<>>, "", fun(_,_) -> ok end);
+
+handle_call({link_to, Bucket, Key, Expires}, _From, #state{access_key=Access, secret_key=Secret, ssl=SSL}=State)->
+    Exp = integer_to_list(s3util:unix_time(Expires)),
+    QueryParams = [{"AWSAccessKeyId", Access},{"Expires", Exp}],
+    Url = buildUrl(Bucket,Key,QueryParams, SSL),
+    Signature = s3util:url_encode(
+                sign( Secret,
+		        stringToSign( "GET", "", "", 
+				    Exp, Bucket, Key, "" ))),
+    {reply, Url++"&Signature="++Signature, State}.
+    
 
 
 %%--------------------------------------------------------------------
@@ -199,13 +213,13 @@ stringToSign ( Verb, ContentMD5, ContentType, Date, Bucket, Path, OriginalHeader
     s3util:string_join( Parts, "\n") ++ canonicalizedResource(Bucket, Path).
     
 sign (Key,Data) ->
-%    io:format("Data being signed is ~p~n", [Data]),
+    %io:format("Data being signed is ~p~n", [Data]),
     binary_to_list( base64:encode( crypto:sha_mac(Key,Data) ) ).
 
 queryParams( [] ) -> "";
 queryParams( L ) -> 
     Stringify = fun ({K,V}) -> K ++ "=" ++ V end,
-    "?" ++ s3util:string_join( lists:map( Stringify, L ), "&" ).
+    "?" ++ s3util:string_join( lists:sort(lists:map( Stringify, L )), "&" ).
 
 buildHost("") -> s3Host();
 buildHost(Bucket) -> Bucket ++ "." ++ s3Host().
@@ -216,18 +230,23 @@ buildUrl(Bucket,Path,QueryParams, false) ->
 buildUrl(Bucket,Path,QueryParams, true) -> 
     "https://" ++ buildHost(Bucket) ++ "/" ++ Path ++ queryParams(QueryParams).
 
-buildContentHeaders( <<>>, _ ) -> [];
-buildContentHeaders( Contents, ContentType ) -> 
+buildContentHeaders( <<>>, _, _ ) -> [];
+buildContentHeaders( Contents, ContentType, Metadata ) -> 
     [{"Content-Length", integer_to_list(size(Contents))},
-     {"Content-Type", ContentType}].
+     {"Content-Type", ContentType} 
+     | lists:map(fun({Key, Value}) when is_list(Value)->
+            {"x-amz-meta-"++Key, Value };
+         ({Key, Value}) when is_integer(Value)->
+             {"x-amz-meta-"++Key, integer_to_list(Value) }
+    end, Metadata)].
 
-genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Timeout, pending=P }=State, Method, Bucket, Path, QueryParams, Contents, ContentType, Callback ) ->
+genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Timeout, pending=P }=State, Method, Bucket, Path, QueryParams, Metadata,Contents, ContentType, Callback ) ->
     Date = httpd_util:rfc1123_date(),
     MethodString = string:to_upper( atom_to_list(Method) ),
     Url = buildUrl(Bucket,Path,QueryParams, SSL),
 
-    OriginalHeaders = buildContentHeaders( Contents, ContentType ),
-    ContentMD5 = "",
+    OriginalHeaders = buildContentHeaders( Contents, ContentType, Metadata ),
+    ContentMD5 = "",%crypto:,
     Body = Contents,
 
 
@@ -241,6 +260,7 @@ genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Tim
 	       | OriginalHeaders ],
     
     Request = case Method of
+          head -> { Url, Headers};
 		  get -> { Url, Headers };
 		  put -> { Url, Headers, ContentType, Body };
 		  delete -> { Url, Headers }

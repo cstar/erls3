@@ -20,8 +20,8 @@
 	 ]).
 %% API
 -export([ 
-	  list_buckets/0, create_bucket/1, delete_bucket/1,
-	  list_objects/2, list_objects/1, write_object/4, read_object/2, delete_object/2 ]).
+	  list_buckets/0, create_bucket/1, delete_bucket/1, link_to/3, head/2,
+	  list_objects/2, list_objects/1, write_object/4, write_object/5, read_object/2, delete_object/2 ]).
 	  
 
 start()->
@@ -50,6 +50,9 @@ shutdown() ->
     application:stop(s3).
     
 
+link_to(Bucket, Key, Expires)->
+    Pid = s3sup:get_random_pid(),
+    gen_server:call(Pid, {link_to, Bucket, Key, Expires} ).
 
 create_bucket (Name) -> 
     Pid = s3sup:get_random_pid(),
@@ -61,9 +64,17 @@ list_buckets ()      ->
     Pid = s3sup:get_random_pid(),
     gen_server:call(Pid, {listbuckets}).
 
-write_object (Bucket, Key, Data, ContentType) -> 
+write_object(Bucket, Key, Data, ContentType)->
+    write_object (Bucket, Key, Data, ContentType, []).
+
+write_object (Bucket, Key, Data, ContentType, Metadata) -> 
     Pid = s3sup:get_random_pid(),
-    gen_server:call(Pid, {put, Bucket, Key, Data, ContentType}).
+    gen_server:call(Pid, {put, Bucket, Key, Data, ContentType, Metadata}).
+    
+head(Bucket, Key)->
+    Pid = s3sup:get_random_pid(),
+    gen_server:call(Pid, {head, Bucket, Key}).
+    
 read_object (Bucket, Key) -> 
     Pid = s3sup:get_random_pid(),
     gen_server:call(Pid, {get, Bucket, Key}).
@@ -82,6 +93,8 @@ list_objects (Bucket) ->
 stop(_State) ->
     ok.
 
+
+%%%%% Internal API stuff %%%%%%%%%
 get(Atom, Env)->
     case application:get_env(Atom) of
      {ok, Value} ->
