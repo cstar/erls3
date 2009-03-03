@@ -76,10 +76,10 @@ handle_call({delete, Bucket }, From, State) ->
     genericRequest(From, State, delete, Bucket, "", [], [],<<>>, "", fun(_,_) -> ok end);
 
 % Object operations
-handle_call({put, Bucket, Key, Content, ContentType, Metadata}, From, State) ->
-    genericRequest(From, State, put, Bucket, Key, [], Metadata, Content, ContentType, fun(_X, Headers) -> 
+handle_call({put, Bucket, Key, Content, ContentType, AdditionalHeaders}, From, State) ->
+    genericRequest(From, State, put, Bucket, Key, [], AdditionalHeaders, Content, ContentType, fun(_X, Headers) -> 
             {value,{"etag",ETag}} = lists:keysearch( "etag", 1, Headers ),
-            {ok, ETag}
+            ETag
         end);
     
 
@@ -102,12 +102,26 @@ handle_call({link_to, Bucket, Key, Expires}, _From, #state{access_key=Access, se
     Url = buildUrl(Bucket,Key,QueryParams, SSL),
     Signature = s3util:url_encode(
                 sign( Secret,
-		        stringToSign( "GET", "", "", 
+		        stringToSign( "GET", "", 
 				    Exp, Bucket, Key, "" ))),
-    {reply, Url++"&Signature="++Signature, State}.
+    {reply, Url++"&Signature="++Signature, State};
     
-
-
+handle_call({policy, {obj, Attrs}=Policy}, _From, #state{access_key=Access, secret_key=Secret}=State)->
+  Conditions = proplists:get_value("conditions", Attrs, []),
+  Attributes = 
+    lists:foldl(fun(["content-length-range", _,_], Acc)->
+                        Acc; %% ignore not used for building the form
+                  ([_, DolName, V], Acc)->
+                    [$$|Name] = binary_to_list(DolName),
+                    [{Name, V}|Acc];
+                   ({obj,[{Name, V}]}, Acc) ->
+                     [{Name, V}| Acc]
+      end, [], Conditions),
+  Enc =base64:encode(
+        rfc4627:encode(Policy)),
+  Signature = base64:encode(crypto:sha_mac(Secret, Enc)),
+  {reply, {Access, binary_to_list(Enc), binary_to_list(Signature), Attributes }, State}.
+  
 %%--------------------------------------------------------------------
 %% Function: handle_cast(Msg, State) -> {noreply, State} |
 %%                                      {noreply, State, Timeout} |
@@ -208,12 +222,12 @@ canonicalizedResource ( "", "" ) -> "/";
 canonicalizedResource ( Bucket, "" ) -> "/" ++ Bucket ++ "/";
 canonicalizedResource ( Bucket, Path ) -> "/" ++ Bucket ++ "/" ++ Path.
 
-stringToSign ( Verb, ContentMD5, ContentType, Date, Bucket, Path, OriginalHeaders ) ->
-    Parts = [ Verb, ContentMD5, ContentType, Date, canonicalizedAmzHeaders(OriginalHeaders)],
+stringToSign ( Verb, ContentType, Date, Bucket, Path, OriginalHeaders ) ->
+    Parts = [ Verb, proplists:get_value("Content-MD5", OriginalHeaders, ""), ContentType, Date, canonicalizedAmzHeaders(OriginalHeaders)],
     s3util:string_join( Parts, "\n") ++ canonicalizedResource(Bucket, Path).
     
 sign (Key,Data) ->
-    %io:format("Data being signed is ~p~n", [Data]),
+    io:format("Data being signed is ~p~n", [Data]),
     binary_to_list( base64:encode( crypto:sha_mac(Key,Data) ) ).
 
 queryParams( [] ) -> "";
@@ -231,27 +245,20 @@ buildUrl(Bucket,Path,QueryParams, true) ->
     "https://" ++ buildHost(Bucket) ++ "/" ++ Path ++ queryParams(QueryParams).
 
 buildContentHeaders( <<>>, _, _ ) -> [];
-buildContentHeaders( Contents, ContentType, Metadata ) -> 
+buildContentHeaders( Contents, ContentType, AdditionalHeaders ) -> 
+    ContentMD5 = crypto:md5(Contents),
     [{"Content-Length", integer_to_list(size(Contents))},
+     {"Content-MD5", binary_to_list(base64:encode(ContentMD5))},
      {"Content-Type", ContentType} 
-     | lists:map(fun({Key, Value}) when is_list(Value)->
-            {"x-amz-meta-"++Key, Value };
-         ({Key, Value}) when is_integer(Value)->
-             {"x-amz-meta-"++Key, integer_to_list(Value) }
-    end, Metadata)].
+     | AdditionalHeaders].
 
-genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Timeout, pending=P }=State, Method, Bucket, Path, QueryParams, Metadata,Contents, ContentType, Callback ) ->
+genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Timeout, pending=P }=State, Method, Bucket, Path, QueryParams, AdditionalHeaders,Contents, ContentType, Callback ) ->
     Date = httpd_util:rfc1123_date(),
     MethodString = string:to_upper( atom_to_list(Method) ),
     Url = buildUrl(Bucket,Path,QueryParams, SSL),
-
-    OriginalHeaders = buildContentHeaders( Contents, ContentType, Metadata ),
-    ContentMD5 = "",%crypto:,
-    Body = Contents,
-
-
+    OriginalHeaders = buildContentHeaders( Contents, ContentType, AdditionalHeaders ),
     Signature = sign( SAK,
-		      stringToSign( MethodString, ContentMD5, ContentType, 
+		      stringToSign( MethodString,  ContentType, 
 				    Date, Bucket, Path, OriginalHeaders )),
 
     Headers = [ {"Authorization","AWS " ++ AKI ++ ":" ++ Signature },
@@ -262,7 +269,7 @@ genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Tim
     Request = case Method of
           head -> { Url, Headers};
 		  get -> { Url, Headers };
-		  put -> { Url, Headers, ContentType, Body };
+		  put -> { Url, Headers, ContentType, Contents };
 		  delete -> { Url, Headers }
 	      end,
     HttpOptions = [{timeout, Timeout}],

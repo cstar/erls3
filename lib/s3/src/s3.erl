@@ -20,7 +20,7 @@
 	 ]).
 %% API
 -export([ 
-	  list_buckets/0, create_bucket/1, delete_bucket/1, link_to/3, head/2,
+	  list_buckets/0, create_bucket/1, delete_bucket/1, link_to/3, head/2, policy/1,
 	  list_objects/2, list_objects/1, write_object/4, write_object/5, read_object/2, delete_object/2 ]).
 	  
 
@@ -88,7 +88,21 @@ list_objects (Bucket, Options ) ->
     gen_server:call(Pid, {list, Bucket, Options }).
 list_objects (Bucket) -> 
     list_objects( Bucket, [] ).
-    
+
+% Sample policy file, 
+% See : http://docs.amazonwebservices.com/AmazonS3/latest/index.html?HTTPPOSTForms.html
+%{obj, [{"expiration", <<"2007-04-01T12:00:00.000Z">>}, 
+%  {"conditions",  [
+%      {obj, [{"acl", <<"public-read">>}]}, 
+%      {obj,[{"bucket", <<"mybucket">>}]}, 
+%      {obj,[{"x-amz-meta-user", <<"cstar">>}]}, 
+%      [<<"starts-with">>, <<"$Content-Type">>, <<"image/">>],
+%      [<<"starts-with">>, <<"$key">>, <<"/user/cstar">>]
+%  ]}]}.
+%% returns {AWSAccessKey, EncodedPolicy, Signature, Attributes to set in the form}
+policy(Policy)->
+    Pid = s3sup:get_random_pid(),
+    gen_server:call(Pid, {policy,Policy}).  
     
 stop(_State) ->
     ok.

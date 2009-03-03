@@ -44,6 +44,12 @@ string_value( #xmlText{value=Value} ) -> Value;
 string_value( [Nodes]) -> lists:flatten(lists:map( fun string_value/1, Nodes ));
 string_value( _ ) ->  "".
      
+create_timestamp(Minutes) -> create_timestamp(calendar:now_to_universal_time(now()), Minutes).
+create_timestamp({{Y, M, D}, {H, Mn, S}}, Minutes) ->
+	to_str(Y) ++ "-" ++ to_str(M) ++ "-" ++ to_str(D) ++ "T" ++
+	to_str(H) ++ ":" ++ to_str(Mn + Minutes)++ ":" ++ to_str(S) ++ "Z".
+add_zeros(L) -> if length(L) == 1 -> [$0|L]; true -> L end.
+to_str(L) -> add_zeros(integer_to_list(L)).
 %%--------------------------------------------------------------------
 %% @doc url_encode - lifted from the ever precious yaws_utils.erl    
 %% <pre>

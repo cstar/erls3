@@ -16,6 +16,11 @@ This s3erl library provides easy access to S3 for erlang applications.
 
 More info at: http://www.amazon.com/b?node=16427261
 
+Intent
+-------
+Do not use it to upload multiple Gb files. Everything is moved around in memory.
+However it should behave pretty well under high load with moderately sized packets.
+
 Requirements
 ------------
 
@@ -40,8 +45,8 @@ You'll need to set your credentials to Amazon SDB :
 - by setting the AMAZON_ACCESS_KEY_ID and AMAZON_SECRET_ACCESS_KEY environment variable (recommended)
 
 = TODO = 
-- Implement Content-MD5 checking
 - automatically retry in case of transient failure
+- support ACL configuration
 - Improve error handling
 - Support for EU-based S3 buckets
 - Support for streaming objects to/from disk (inets supports streaming
@@ -50,6 +55,12 @@ You'll need to set your credentials to Amazon SDB :
 
 Version History
 ---------------
+v0.4 - 2009/03/02
+  - added support for HEAD
+  - Content-MD5 is implemented
+  - x-amz-meta-* headers can be added.
+  - implemented a simple POST policy file encoding.
+
 v0.3 - 2009/03/02
 
   - imported into github
