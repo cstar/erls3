@@ -87,7 +87,9 @@ handle_call({ list, Bucket, Options }, From, State) ->
     Headers = lists:map( fun option_to_param/1, Options ),
     genericRequest(From, State, get, Bucket, "", Headers, [], <<>>, "",  fun parseBucketListXml/2 );
 
-handle_call({ get, Bucket, Key }, From, State) ->
+handle_call({ get, Bucket, Key, Etag}, From, State) ->
+    genericRequest(From, State, get,  Bucket, Key, [], [{"If-None-Match", Etag}], <<>>, "", fun(B, H) -> {B,H} end);
+handle_call({ get, Bucket, Key}, From, State) ->
     genericRequest(From, State, get,  Bucket, Key, [], [], <<>>, "", fun(B, H) -> {B,H} end);
 
 handle_call({ head, Bucket, Key }, From, State) ->
@@ -183,13 +185,15 @@ option_to_param( { delimiter, X } ) ->
 
 
 handle_http_response(HttpResponse,{From,Callback}, _State)->
+    io:format("HTTP reply was ~p~n", [HttpResponse]),
     case HttpResponse of 
         {{_HttpVersion, StatusCode, _ErrorMessage}, Headers, Body } ->
     	    %?DEBUG("******* Status ~p ~n", [StatusCode]),
             
             case StatusCode of
-    	        200 ->
+    	    200 ->
 	            gen_server:reply(From,{ok, Callback(Body, Headers)});
+	        304 -> gen_server:reply(From,not_modified);
 	        _ ->
 	            {Xml, _Rest} = xmerl_scan:string(binary_to_list(Body)),
     		    [#xmlText{value=ErrorCode}]    = xmerl_xpath:string("//Error/Code/text()", Xml),
@@ -244,7 +248,7 @@ buildUrl(Bucket,Path,QueryParams, false) ->
 buildUrl(Bucket,Path,QueryParams, true) -> 
     "https://" ++ buildHost(Bucket) ++ "/" ++ Path ++ queryParams(QueryParams).
 
-buildContentHeaders( <<>>, _, _ ) -> [];
+buildContentHeaders( <<>>, _, AdditionalHeaders ) -> AdditionalHeaders;
 buildContentHeaders( Contents, ContentType, AdditionalHeaders ) -> 
     ContentMD5 = crypto:md5(Contents),
     [{"Content-Length", integer_to_list(size(Contents))},
@@ -252,7 +256,8 @@ buildContentHeaders( Contents, ContentType, AdditionalHeaders ) ->
      {"Content-Type", ContentType} 
      | AdditionalHeaders].
 
-genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Timeout, pending=P }=State, Method, Bucket, Path, QueryParams, AdditionalHeaders,Contents, ContentType, Callback ) ->
+genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Timeout, pending=P }=State, 
+                Method, Bucket, Path, QueryParams, AdditionalHeaders,Contents, ContentType, Callback ) ->
     Date = httpd_util:rfc1123_date(),
     MethodString = string:to_upper( atom_to_list(Method) ),
     Url = buildUrl(Bucket,Path,QueryParams, SSL),
@@ -275,12 +280,12 @@ genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Tim
     HttpOptions = [{timeout, Timeout}],
     Options = [ {sync,false}, {headers_as_is,true} ],
 
-%    io:format("Sending request ~p~n", [Request]),
+    io:format("Sending request ~p~n", [Request]),
     {ok,RequestId} = http:request( Method, Request, HttpOptions, Options ),
     Pendings = gb_trees:insert(RequestId,{From,Callback},P),
     
     {noreply, State#state{pending=Pendings}}.
-%    io:format("HTTP reply was ~p~n", [Reply]),
+
     
 
 

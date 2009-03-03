@@ -21,7 +21,7 @@
 %% API
 -export([ 
 	  list_buckets/0, create_bucket/1, delete_bucket/1, link_to/3, head/2, policy/1,
-	  list_objects/2, list_objects/1, write_object/4, write_object/5, read_object/2, delete_object/2 ]).
+	  list_objects/2, list_objects/1, write_object/4, write_object/5, read_object/2, read_object/3, delete_object/2 ]).
 	  
 
 start()->
@@ -74,6 +74,10 @@ write_object (Bucket, Key, Data, ContentType, Metadata) ->
 head(Bucket, Key)->
     Pid = s3sup:get_random_pid(),
     gen_server:call(Pid, {head, Bucket, Key}).
+
+read_object (Bucket, Key, Etag) -> 
+    Pid = s3sup:get_random_pid(),
+    gen_server:call(Pid, {get, Bucket, Key, Etag}).
     
 read_object (Bucket, Key) -> 
     Pid = s3sup:get_random_pid(),
