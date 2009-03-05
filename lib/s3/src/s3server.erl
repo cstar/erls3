@@ -122,7 +122,12 @@ handle_call({policy, {obj, Attrs}=Policy}, _From, #state{access_key=Access, secr
   Enc =base64:encode(
         rfc4627:encode(Policy)),
   Signature = base64:encode(crypto:sha_mac(Secret, Enc)),
-  {reply, {Access, binary_to_list(Enc), binary_to_list(Signature), [Attributes |{"file", <<"">>}] }, State}.
+  {reply, [{"AWSAccessKeyId",list_to_binary(Access)},
+           {"Policy", Enc}, 
+           {"Signature", Signature}
+          |Attributes] ++
+          [{"file", <<"">>}], 
+          State}.
   
 %%--------------------------------------------------------------------
 %% Function: handle_cast(Msg, State) -> {noreply, State} |
@@ -188,8 +193,6 @@ handle_http_response(HttpResponse,{From,Callback}, _State)->
     io:format("HTTP reply was ~p~n", [HttpResponse]),
     case HttpResponse of 
         {{_HttpVersion, StatusCode, _ErrorMessage}, Headers, Body } ->
-    	    %?DEBUG("******* Status ~p ~n", [StatusCode]),
-            
             case StatusCode of
     	    200 ->
 	            gen_server:reply(From,{ok, Callback(Body, Headers)});

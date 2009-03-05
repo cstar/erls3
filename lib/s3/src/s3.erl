@@ -103,7 +103,17 @@ list_objects (Bucket) ->
 %      [<<"starts-with">>, <<"$Content-Type">>, <<"image/">>],
 %      [<<"starts-with">>, <<"$key">>, <<"/user/cstar">>]
 %  ]}]}.
-%% returns {AWSAccessKey, EncodedPolicy, Signature, Attributes to set in the form}
+% s3:policy will return : (helpful for building the form)
+% [{"AWSAccessKeyId",<<"ACCESS">>},
+% {"Policy",
+%  <<"eyJleHBpcmF0aW9uIjoiMjAwNy0wNC0wMVQxMjowMDowMC4wMDBaIiwiY29uZGl0aW9ucyI6W3siYWNsIjoicHVibGljLXJlYWQi"...>>},
+% {"Signature",<<"dNTpGLbdlz5KI+iQC6re8w5RnYc=">>},
+% {"key",<<"/user/cstar">>},
+% {"Content-Type",<<"image/">>},
+% {"x-amz-meta-user",<<"cstar">>},
+% {"bucket",<<"mybucket">>},
+% {"acl",<<"public-read">>},
+% {"file",<<>>}]
 policy(Policy)->
     Pid = s3sup:get_random_pid(),
     gen_server:call(Pid, {policy,Policy}).  
