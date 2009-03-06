@@ -111,9 +111,9 @@ handle_call({link_to, Bucket, Key, Expires}, _From, #state{access_key=Access, se
 handle_call({policy, {obj, Attrs}=Policy}, _From, #state{access_key=Access, secret_key=Secret}=State)->
   Conditions = proplists:get_value("conditions", Attrs, []),
   Attributes = 
-    lists:foldl(fun(["content-length-range", _,_], Acc)->
-                        Acc; %% ignore not used for building the form
-                  ([_, DolName, V], Acc)->
+    lists:foldl(fun([<<"content-length-range">>, Min,Max], Acc) when is_integer(Min) andalso is_integer(Max) ->
+                        Acc; %% ignore not used for building the form 
+                  ([_, DolName, V], Acc) ->
                     [$$|Name] = binary_to_list(DolName),
                     [{Name, V}|Acc];
                    ({obj,[{Name, V}]}, Acc) ->
@@ -190,13 +190,16 @@ option_to_param( { delimiter, X } ) ->
 
 
 handle_http_response(HttpResponse,{From,Callback}, _State)->
-    io:format("HTTP reply was ~p~n", [HttpResponse]),
+    %io:format("HTTP reply was ~p~n", [HttpResponse]),
     case HttpResponse of 
         {{_HttpVersion, StatusCode, _ErrorMessage}, Headers, Body } ->
             case StatusCode of
-    	    200 ->
+    	    _ when StatusCode == 200 orelse StatusCode == 204 ->
 	            gen_server:reply(From,{ok, Callback(Body, Headers)});
-	        304 -> gen_server:reply(From,not_modified);
+	        304 -> 
+	            gen_server:reply(From, {ok, not_modified});
+	        404 ->
+	            gen_server:reply(From, {error, not_found, "Not found"});
 	        _ ->
 	            {Xml, _Rest} = xmerl_scan:string(binary_to_list(Body)),
     		    [#xmlText{value=ErrorCode}]    = xmerl_xpath:string("//Error/Code/text()", Xml),
@@ -234,7 +237,7 @@ stringToSign ( Verb, ContentType, Date, Bucket, Path, OriginalHeaders ) ->
     s3util:string_join( Parts, "\n") ++ canonicalizedResource(Bucket, Path).
     
 sign (Key,Data) ->
-    io:format("Data being signed is ~p~n", [Data]),
+    %io:format("Data being signed is ~p~n", [Data]),
     binary_to_list( base64:encode( crypto:sha_mac(Key,Data) ) ).
 
 queryParams( [] ) -> "";
@@ -283,7 +286,7 @@ genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Tim
     HttpOptions = [{timeout, Timeout}],
     Options = [ {sync,false}, {headers_as_is,true} ],
 
-    io:format("Sending request ~p~n", [Request]),
+    %io:format("Sending request ~p~n", [Request]),
     {ok,RequestId} = http:request( Method, Request, HttpOptions, Options ),
     Pendings = gb_trees:insert(RequestId,{From,Callback},P),
     
