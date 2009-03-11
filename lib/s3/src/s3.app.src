@@ -5,5 +5,5 @@
   {modules, %MODULES%},
   {mod, {s3,[]}},
   {registered, [s3sup]},
-  {applications, [kernel, stdlib, sasl, crypto, inets, xmerl]}
+  {applications, [kernel, stdlib, sasl, crypto, xmerl]}
  ]}.

@@ -8,5 +8,6 @@
   {crypto, "_"},
   {xmerl, "_"},
   {inets, "_"},
+  {ibrowse, "_"},
   {s3, "_"}]
 }.

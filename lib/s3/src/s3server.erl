@@ -8,7 +8,7 @@
 -module(s3server).
 
 -behaviour(gen_server).
--define(TIMEOUT, 20000).
+-define(TIMEOUT, 40000).
 %%--------------------------------------------------------------------
 %% External exports
 %%--------------------------------------------------------------------
@@ -26,7 +26,7 @@
 -include("../include/s3.hrl").
 
 -record(state, {ssl,access_key, secret_key, pending, timeout=?TIMEOUT}).
-
+-record(request, {pid, callback, code, headers=[], content=[]}).
 %%====================================================================
 %% External functions
 %%====================================================================
@@ -144,15 +144,36 @@ handle_cast(_Msg, State) ->
 %%                                       {stop, Reason, State}
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
-handle_info({http,{RequestId,Response}},State = #state{pending=P}) ->
+handle_info({ibrowse_async_headers,RequestId,Code,Headers },State = #state{pending=P}) ->
+    %%?DEBUG("******* Response :  ~p~n", [Response]),
+	case gb_trees:lookup(RequestId,P) of
+		{value,#request{}=R} -> 
+			{noreply,State#state{pending=gb_trees:enter(RequestId,R#request{code = Code, headers=Headers},P)}};
+		none -> 
+		    {noreply,State}
+			%% the requestid isn't here, probably the request was deleted after a timeout
+	end;
+handle_info({ibrowse_async_response,_RequestId,{chunk_start, _N} },State) ->
+    {noreply, State};
+handle_info({ibrowse_async_response,_RequestId,chunk_end },State) ->
+    {noreply, State};	
+    
+handle_info({ibrowse_async_response,RequestId,Body },State = #state{pending=P}) when is_list(Body)->
     %?DEBUG("******* Response :  ~p~n", [Response]),
 	case gb_trees:lookup(RequestId,P) of
-		{value,Request} -> handle_http_response(Response,Request, State),
-						 {noreply,State#state{pending=gb_trees:delete(RequestId,P)}};
+		{value,#request{content=Content}=R} -> 
+			{noreply,State#state{pending=gb_trees:enter(RequestId,R#request{content=Content ++ Body}, P)}};
 		none -> {noreply,State}
-				%% the requestid isn't here, probably the request was deleted after a timeout
+			%% the requestid isn't here, probably the request was deleted after a timeout
 	end;
-
+handle_info({ibrowse_async_response_end,RequestId}, State = #state{pending=P})->
+    case gb_trees:lookup(RequestId,P) of
+		{value,R} -> 
+		    handle_http_response(R),
+			{noreply,State#state{pending=gb_trees:delete(RequestId, P)}};
+		none -> {noreply,State}
+			%% the requestid isn't here, probably the request was deleted after a timeout
+	end;
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -176,10 +197,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
-
-s3Host () ->
-    "s3.amazonaws.com".
-
 option_to_param( { prefix, X } ) -> 
     { "prefix", X };
 option_to_param( { maxkeys, X } ) -> 
@@ -187,37 +204,20 @@ option_to_param( { maxkeys, X } ) ->
 option_to_param( { delimiter, X } ) -> 
     { "delimiter", X }.
 
-
-
-handle_http_response(HttpResponse,{From,Callback}, _State)->
-    %io:format("HTTP reply was ~p~n", [HttpResponse]),
-    case HttpResponse of 
-        {{_HttpVersion, StatusCode, _ErrorMessage}, Headers, Body } ->
-            case StatusCode of
-    	    _ when StatusCode == 200 orelse StatusCode == 204 ->
-	            gen_server:reply(From,{ok, Callback(Body, Headers)});
-	        304 -> 
-	            gen_server:reply(From, {ok, not_modified});
-	        404 ->
-	            gen_server:reply(From, {error, not_found, "Not found"});
-	        _ ->
-	            {Xml, _Rest} = xmerl_scan:string(binary_to_list(Body)),
-    		    [#xmlText{value=ErrorCode}]    = xmerl_xpath:string("//Error/Code/text()", Xml),
-    		    [#xmlText{value=ErrorMessage}] = xmerl_xpath:string("//Error/Message/text()", Xml),
-    	        gen_server:reply(From,{error, ErrorCode, ErrorMessage})
-            end;
-        {error, ErrorMessage} ->  gen_server:reply(From,{error, http_error, ErrorMessage})
-	    %case ErrorMessage of 
-		%    Error when  Error == timeout ->
-    	%    	    %?DEBUG("URL Timedout, retrying~n", []),
-    	%    	    erlsdb_util:sleep(1000),
-		%            rest_request(From,Action, Params, RequestOp, State);
-		%_ ->
-    	%           gen_server:reply(From,{error, http_error, ErrorMessage})
-	    %end
-    end.
-
-
+handle_http_response(#request{pid=From, code="304"})->
+    gen_server:reply(From, {ok, not_modified});
+handle_http_response(#request{pid=From, code="404"})-> 
+    gen_server:reply(From, {error, not_found, "Not found"});
+handle_http_response(#request{pid=From, callback=CallBack, code=Code, headers=Headers, content=Content})
+                    when Code =:= "200" orelse Code =:= "204"->
+    gen_server:reply(From,{ok, CallBack(Content, Headers)});
+handle_http_response(#request{pid=From, content=Content})->
+    {Xml, _Rest} = xmerl_scan:string(Content),
+    [#xmlText{value=ErrorCode}]    = xmerl_xpath:string("//Error/Code/text()", Xml),
+    [#xmlText{value=ErrorMessage}] = xmerl_xpath:string("//Error/Message/text()", Xml),
+    gen_server:reply(From,{error, ErrorCode, ErrorMessage}).
+    
+    
 isAmzHeader( Header ) -> lists:prefix("x-amz-", Header).
 
 canonicalizedAmzHeaders( AllHeaders ) ->
@@ -237,66 +237,67 @@ stringToSign ( Verb, ContentType, Date, Bucket, Path, OriginalHeaders ) ->
     s3util:string_join( Parts, "\n") ++ canonicalizedResource(Bucket, Path).
     
 sign (Key,Data) ->
-    %io:format("Data being signed is ~p~n", [Data]),
+    %io:format("Data being signed is ~s~n", [Data]),
     binary_to_list( base64:encode( crypto:sha_mac(Key,Data) ) ).
 
 queryParams( [] ) -> "";
 queryParams( L ) -> 
     Stringify = fun ({K,V}) -> K ++ "=" ++ V end,
     "?" ++ s3util:string_join( lists:sort(lists:map( Stringify, L )), "&" ).
-
-buildHost("") -> s3Host();
-buildHost(Bucket) -> Bucket ++ "." ++ s3Host().
     
 buildUrl(Bucket,Path,QueryParams, false) -> 
-    "http://" ++ buildHost(Bucket) ++ "/" ++ Path ++ queryParams(QueryParams);
+    "http://s3.amazonaws.com" ++ canonicalizedResource(Bucket,Path) ++ queryParams(QueryParams);
 
 buildUrl(Bucket,Path,QueryParams, true) -> 
-    "https://" ++ buildHost(Bucket) ++ "/" ++ Path ++ queryParams(QueryParams).
+    "https://s3.amazonaws.com"++ canonicalizedResource(Bucket,Path) ++ queryParams(QueryParams).
 
-buildContentHeaders( <<>>, _, AdditionalHeaders ) -> AdditionalHeaders;
-buildContentHeaders( Contents, ContentType, AdditionalHeaders ) -> 
+buildContentHeaders( <<>>, AdditionalHeaders ) -> AdditionalHeaders;
+buildContentHeaders( Contents, AdditionalHeaders ) -> 
     ContentMD5 = crypto:md5(Contents),
-    [{"Content-Length", integer_to_list(size(Contents))},
-     {"Content-MD5", binary_to_list(base64:encode(ContentMD5))},
-     {"Content-Type", ContentType} 
+    [{"Content-MD5", binary_to_list(base64:encode(ContentMD5))}
      | AdditionalHeaders].
+buildOptions(<<>>, _ContentType, SSL)->
+    [{stream_to, self()}, {is_ssl, SSL}, {ssl_options, []}];
+buildOptions(Content, ContentType,SSL)->
+    [{content_length, integer_to_list(size(Content))},
+    {content_type, ContentType},
+    {is_ssl, SSL},{ssl_options, []},
+    {stream_to, self()}].
 
 genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Timeout, pending=P }=State, 
                 Method, Bucket, Path, QueryParams, AdditionalHeaders,Contents, ContentType, Callback ) ->
     Date = httpd_util:rfc1123_date(),
     MethodString = string:to_upper( atom_to_list(Method) ),
     Url = buildUrl(Bucket,Path,QueryParams, SSL),
-    OriginalHeaders = buildContentHeaders( Contents, ContentType, AdditionalHeaders ),
+    OriginalHeaders = buildContentHeaders( Contents, AdditionalHeaders ),
     Signature = sign( SAK,
 		      stringToSign( MethodString,  ContentType, 
 				    Date, Bucket, Path, OriginalHeaders )),
 
     Headers = [ {"Authorization","AWS " ++ AKI ++ ":" ++ Signature },
-		{"Host", buildHost(Bucket) },
-		{"Date", Date } 
-	       | OriginalHeaders ],
-    
-    Request = case Method of
-          head -> { Url, Headers};
-		  get -> { Url, Headers };
-		  put -> { Url, Headers, ContentType, Contents };
-		  delete -> { Url, Headers }
-	      end,
-    HttpOptions = [{timeout, Timeout}],
-    Options = [ {sync,false}, {headers_as_is,true} ],
-
-    %io:format("Sending request ~p~n", [Request]),
-    {ok,RequestId} = http:request( Method, Request, HttpOptions, Options ),
-    Pendings = gb_trees:insert(RequestId,{From,Callback},P),
-    
-    {noreply, State#state{pending=Pendings}}.
+		        {"Host", "s3.amazonaws.com" },
+		        {"Date", Date } 
+	            | OriginalHeaders ],
+    Options = buildOptions(Contents, ContentType, SSL), 
+    %io:format("Sending request ~p~n", [Url]),
+    case ibrowse:send_req(Url, Headers,  Method, Contents,Options, Timeout) of
+        {ibrowse_req_id,RequestId} ->
+            Pendings = gb_trees:insert(RequestId,#request{pid=From,callback=Callback},P),
+            {noreply, State#state{pending=Pendings}};
+        {error,E} when E =:= retry_later orelse E =:= conn_failed ->
+            io:format("Waiting on retry Error : ~p, Pid : ~p~n", [E, self()]),
+            s3util:sleep(10),
+            genericRequest(From, State,Method, Bucket, Path, QueryParams, AdditionalHeaders,Contents, ContentType, Callback );
+        {error, E} ->
+            io:format("Error : ~p, Pid : ~p~n", [E, self()]),
+            {reply, {error, E, "Error Occured"}, State}
+    end.
 
     
 
 
 parseBucketListXml (XmlDoc, _H) ->
-    {Xml, _Rest} = xmerl_scan:string(binary_to_list(XmlDoc)),
+    {Xml, _Rest} = xmerl_scan:string(XmlDoc),
     ContentNodes = xmerl_xpath:string("/ListBucketResult/Contents", Xml),
 
     GetObjectAttribute = fun (Node,Attribute) -> 
@@ -315,7 +316,7 @@ parseBucketListXml (XmlDoc, _H) ->
 
 
 xmlToBuckets( Body, _H) ->
-    {Xml, _Rest} = xmerl_scan:string(binary_to_list(Body)),
+    {Xml, _Rest} = xmerl_scan:string(Body),
     TextNodes       = xmerl_xpath:string("//Bucket/Name/text()", Xml),
     lists:map( fun (#xmlText{value=T}) -> T end, TextNodes).
 
