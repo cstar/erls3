@@ -98,11 +98,16 @@ namespace :erlang do
     erlang_source_dependencies + erlang_test_dependencies
   end
 
+  def erlang_home
+    @erlang_home||=IO.popen("#{ERL_TOP}/bin/erl -noinput -noshell -eval 'io:format(code:root_dir()).' -s init stop").readlines[0] 
+  end
+
   def run_application_test(application, directories)
     application_name = application.pathmap("%f").ext("")
     run_script("run_test",["application", application_name] + directories)
   end
-
+  
+  
   def run_description_test(description, directories)
     run_script("run_test",["file", description] + directories)
   end
@@ -372,6 +377,16 @@ namespace :erlang do
   task :compile => [:modules, :applications, :tests]
 
   task :default => [:compile]
+
+
+  desc "Installs in local erl repository : #{erlang_home}"
+  task :install =>  [:compile] do |t|
+    FileList.new('lib/*').each do |dir|
+      vsn = extract_version_information("#{dir}/vsn.config","vsn").gsub("\"","")
+      sh "cp -R #{dir} #{erlang_home}/#{dir}-#{vsn}"
+    end
+  end
+
 
   desc "Build Application packages"
   task :package => [:applications] do

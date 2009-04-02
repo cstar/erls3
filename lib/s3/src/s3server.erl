@@ -26,7 +26,7 @@
 -include("../include/s3.hrl").
 
 -record(state, {ssl,access_key, secret_key, pending, timeout=?TIMEOUT}).
--record(request, {pid, callback, code, headers=[], content=[]}).
+-record(request, {pid, callback, started, code, headers=[], content=[]}).
 %%====================================================================
 %% External functions
 %%====================================================================
@@ -168,8 +168,9 @@ handle_info({ibrowse_async_response,RequestId,Body },State = #state{pending=P}) 
 	end;
 handle_info({ibrowse_async_response_end,RequestId}, State = #state{pending=P})->
     case gb_trees:lookup(RequestId,P) of
-		{value,R} -> 
+		{value,#request{started=_Started}=R} -> 
 		    handle_http_response(R),
+		    %io:format("Query took ~p ms~n", [timer:now_diff(now(), Started)/1000]),
 			{noreply,State#state{pending=gb_trees:delete(RequestId, P)}};
 		none -> {noreply,State}
 			%% the requestid isn't here, probably the request was deleted after a timeout
@@ -259,11 +260,16 @@ buildContentHeaders( Contents, AdditionalHeaders ) ->
 buildOptions(<<>>, _ContentType, SSL)->
     [{stream_to, self()}, {is_ssl, SSL}, {ssl_options, []}];
 buildOptions(Content, ContentType,SSL)->
-    [{content_length, integer_to_list(size(Content))},
+    [{content_length, content_length(Content)},
     {content_type, ContentType},
     {is_ssl, SSL},{ssl_options, []},
     {stream_to, self()}].
-
+    
+content_length(Content) when is_binary(Content)->
+    integer_to_list(size(Content));
+content_length(Content) when is_list(Content)->
+    integer_to_list(length(Content)).
+    
 genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Timeout, pending=P }=State, 
                 Method, Bucket, Path, QueryParams, AdditionalHeaders,Contents, ContentType, Callback ) ->
     Date = httpd_util:rfc1123_date(),
@@ -279,10 +285,10 @@ genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Tim
 		        {"Date", Date } 
 	            | OriginalHeaders ],
     Options = buildOptions(Contents, ContentType, SSL), 
-    %io:format("Sending request ~p~n", [Url]),
+    io:format("Sending request ~p~n", [Url]),
     case ibrowse:send_req(Url, Headers,  Method, Contents,Options, Timeout) of
         {ibrowse_req_id,RequestId} ->
-            Pendings = gb_trees:insert(RequestId,#request{pid=From,callback=Callback},P),
+            Pendings = gb_trees:insert(RequestId,#request{pid=From,started=now(), callback=Callback},P),
             {noreply, State#state{pending=Pendings}};
         {error,E} when E =:= retry_later orelse E =:= conn_failed ->
             io:format("Waiting on retry Error : ~p, Pid : ~p~n", [E, self()]),

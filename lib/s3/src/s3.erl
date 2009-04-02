@@ -8,7 +8,7 @@
 -module(s3).
 
 -behaviour(application).
-
+-define(TIMEOUT, 15000).
 %%--------------------------------------------------------------------
 %% External exports
 %%--------------------------------------------------------------------
@@ -21,7 +21,7 @@
 %% API
 -export([
       read_term/2, write_term/3,
-	  list_buckets/0, create_bucket/1, delete_bucket/1, link_to/3, head/2, policy/1, get_object/3, get_objects/2,
+	  list_buckets/0, create_bucket/1, delete_bucket/1, link_to/3, head/2, policy/1, get_object/3, get_objects/3, get_objects/2,
 	  list_objects/2, list_objects/1, write_object/4, write_object/5, read_object/2, read_object/3, delete_object/2 ]).
 	  
 %timer:tc(s3,get_objects,["ejabberd.conf", [{maxkeys, 20}]]).
@@ -36,8 +36,8 @@ start(_Type, _StartArgs) ->
     
     ID = get(access, "AMAZON_ACCESS_KEY_ID"),
     Secret = get(secret, "AMAZON_SECRET_ACCESS_KEY"),
-    SSL = param(ssl, true),
-    N = param(workers, 5),
+    SSL = param(ssl, false),
+    N = param(workers, 2),
     Timeout = param(timeout, nil),
     Port = if SSL == true -> 
             ssl:start(),
@@ -104,23 +104,34 @@ delete_object (Bucket, Key) ->
 
 get_object (From, Bucket, Key) -> 
     Pid = s3sup:get_random_pid(),
-    {ok, {Content, Headers}} = gen_server:call(Pid, {get, Bucket, Key}),
-    From ! {s3object, Content}. 
+    {ok, {Content, _Headers}} = gen_server:call(Pid, {get, Bucket, Key}),
+    From ! {s3object, Key, Content}. 
     
 % Gets objects in // from S3.
 %% option example: [{delimiter, "/"},{maxkeys,10},{prefix,"/foo"}]
 get_objects(Bucket, Options)->
+    get_objects(Bucket, Options, ?TIMEOUT).
+get_objects(Bucket, Options, Timeout)->
     {ok, Objects} = list_objects (Bucket, Options ),
+    timer:send_after(Timeout, self(), timeout),
     lists:foreach(fun({object_info, {"Key", Key}, _, _, _})->
         spawn(?MODULE, get_object,[self(), Bucket, Key ])
     end, Objects),
-    R = lists:foldl(fun(_N, Acc)->
+    R = lists:foldl(
+    fun (_N, timeout)->timeout;
+        (_N, Acc)->
         receive
-            {s3object, R} -> 
-                [R|Acc]
+            {s3object, K, R} -> 
+                [{K, R}|Acc];
+            timeout->
+                timeout
         end
+        
     end,[],  Objects),
-    {ok, R}.
+    case R of
+        timeout -> {error,timeout};
+        R -> {ok, R}
+    end.
     
 %% option example: [{delimiter, "/"},{maxkeys,10},{prefix,"/foo"}]
 list_objects (Bucket, Options ) -> 
