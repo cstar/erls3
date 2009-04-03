@@ -45,9 +45,7 @@ start_link([Access, Secret, SSL, Timeout]) ->
 %%--------------------------------------------------------------------
 stop() ->
     gen_server:cast(?MODULE, stop).
-    
-    
-    
+
 init([Access, Secret, SSL, nil]) ->
     {ok, #state{ssl = SSL,access_key=Access, secret_key=Secret, pending=gb_trees:empty()}};
 init([Access, Secret, SSL, Timeout]) ->
@@ -171,6 +169,7 @@ handle_info({ibrowse_async_response_end,RequestId}, State = #state{pending=P})->
 		{value,#request{started=_Started}=R} -> 
 		    handle_http_response(R),
 		    %io:format("Query took ~p ms~n", [timer:now_diff(now(), Started)/1000]),
+		    io:format("Finished : pending size : ~p~n", [gb_trees:size(P)-1]),
 			{noreply,State#state{pending=gb_trees:delete(RequestId, P)}};
 		none -> {noreply,State}
 			%% the requestid isn't here, probably the request was deleted after a timeout
@@ -272,31 +271,39 @@ content_length(Content) when is_list(Content)->
     
 genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Timeout, pending=P }=State, 
                 Method, Bucket, Path, QueryParams, AdditionalHeaders,Contents, ContentType, Callback ) ->
-    Date = httpd_util:rfc1123_date(),
-    MethodString = string:to_upper( atom_to_list(Method) ),
-    Url = buildUrl(Bucket,Path,QueryParams, SSL),
-    OriginalHeaders = buildContentHeaders( Contents, AdditionalHeaders ),
-    Signature = sign( SAK,
-		      stringToSign( MethodString,  ContentType, 
-				    Date, Bucket, Path, OriginalHeaders )),
-
-    Headers = [ {"Authorization","AWS " ++ AKI ++ ":" ++ Signature },
-		        {"Host", "s3.amazonaws.com" },
-		        {"Date", Date } 
-	            | OriginalHeaders ],
-    Options = buildOptions(Contents, ContentType, SSL), 
-    io:format("Sending request ~p~n", [Url]),
-    case ibrowse:send_req(Url, Headers,  Method, Contents,Options, Timeout) of
-        {ibrowse_req_id,RequestId} ->
-            Pendings = gb_trees:insert(RequestId,#request{pid=From,started=now(), callback=Callback},P),
-            {noreply, State#state{pending=Pendings}};
-        {error,E} when E =:= retry_later orelse E =:= conn_failed ->
-            io:format("Waiting on retry Error : ~p, Pid : ~p~n", [E, self()]),
-            s3util:sleep(10),
-            genericRequest(From, State,Method, Bucket, Path, QueryParams, AdditionalHeaders,Contents, ContentType, Callback );
-        {error, E} ->
-            io:format("Error : ~p, Pid : ~p~n", [E, self()]),
-            {reply, {error, E, "Error Occured"}, State}
+    Stack = gb_trees:size(P),
+    if Stack  > 100 ->
+        {reply, retry, State};
+    true ->
+        Date = httpd_util:rfc1123_date(),
+        MethodString = string:to_upper( atom_to_list(Method) ),
+        Url = buildUrl(Bucket,Path,QueryParams, SSL),
+        OriginalHeaders = buildContentHeaders( Contents, AdditionalHeaders ),
+        Signature = sign( SAK,
+	    	      stringToSign( MethodString,  ContentType, 
+	    			    Date, Bucket, Path, OriginalHeaders )),
+        
+        Headers = [ {"Authorization","AWS " ++ AKI ++ ":" ++ Signature },
+	    	        {"Host", "s3.amazonaws.com" },
+	    	        {"Date", Date } 
+	                | OriginalHeaders ],
+        Options = buildOptions(Contents, ContentType, SSL), 
+        %io:format("Sending request ~p~n", [Url]),
+        
+        case ibrowse:send_req(Url, Headers,  Method, Contents,Options, Timeout) of
+            {ibrowse_req_id,RequestId} ->
+                Pendings = gb_trees:insert(RequestId,#request{pid=From,started=now(), callback=Callback},P),
+                io:format("New query pending size : ~p~n", [gb_trees:size(P)]),
+                {noreply, State#state{pending=Pendings}};
+            {error,E} when E =:= retry_later orelse E =:= conn_failed ->
+                io:format("Waiting on retry Error : ~p, Pid : ~p~n", [E, self()]),
+                {reply, retry, State};
+                %s3util:sleep(10),
+                %genericRequest(From, State,Method, Bucket, Path, QueryParams, AdditionalHeaders,Contents, ContentType, Callback );
+            {error, E} ->
+                io:format("Error : ~p, Pid : ~p~n", [E, self()]),
+                {reply, {error, E, "Error Occured"}, State}
+        end
     end.
 
     

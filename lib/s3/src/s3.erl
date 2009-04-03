@@ -21,10 +21,10 @@
 %% API
 -export([
       read_term/2, write_term/3,
-	  list_buckets/0, create_bucket/1, delete_bucket/1, link_to/3, head/2, policy/1, get_object/3, get_objects/3, get_objects/2,
+	  list_buckets/0, create_bucket/1, delete_bucket/1, link_to/3, head/2, policy/1, get_objects/2,
 	  list_objects/2, list_objects/1, write_object/4, write_object/5, read_object/2, read_object/3, delete_object/2 ]).
 	  
-%timer:tc(s3,get_objects,["ejabberd.conf", [{maxkeys, 20}]]).
+
 start()->
     application:start(crypto),
     application:start(xmerl),
@@ -36,18 +36,17 @@ start(_Type, _StartArgs) ->
     ID = get(access, "AMAZON_ACCESS_KEY_ID"),
     Secret = get(secret, "AMAZON_SECRET_ACCESS_KEY"),
     SSL = param(ssl, false),
-    N = param(workers, 2),
-    Timeout = param(timeout, nil),
+    N = param(workers, 1),
+    Timeout = param(timeout, ?TIMEOUT),
     Port = if SSL == true -> 
             ssl:start(),
             443;
         true -> 80
     end,
-    ibrowse:set_dest("s3.amazonaws.com", Port, [{max_sessions, N*20},{max_pipeline_size, N*20}]),
+    ibrowse:set_dest("s3.amazonaws.com", Port, [{max_sessions, 50},{max_pipeline_size, 20}]),
     if ID == error orelse Secret == error ->
             {error, "AWS credentials not set. Pass as application parameters or as env variables."};
         true ->
-          
             s3sup:start_link([ID, Secret, SSL, Timeout], N)
 	end.
 	
@@ -56,18 +55,14 @@ shutdown() ->
     
 
 link_to(Bucket, Key, Expires)->
-    Pid = s3sup:get_random_pid(),
-    gen_server:call(Pid, {link_to, Bucket, Key, Expires} ).
+    call({link_to, Bucket, Key, Expires} ).
 
 create_bucket (Name) -> 
-    Pid = s3sup:get_random_pid(),
-    gen_server:call(Pid, {put, Name} ).
+    call({put, Name} ).
 delete_bucket (Name) -> 
-    Pid = s3sup:get_random_pid(),
-    gen_server:call(Pid, {delete, Name} ).
+    call({delete, Name} ).
 list_buckets ()      -> 
-    Pid = s3sup:get_random_pid(),
-    gen_server:call(Pid, {listbuckets}).
+    call({listbuckets}).
 
 write_term(Bucket, Key, Term)->
     write_object (Bucket, Key,term_to_binary(Term), "application/poet", []).
@@ -76,8 +71,7 @@ write_object(Bucket, Key, Data, ContentType)->
     write_object (Bucket, Key, Data, ContentType, []).
 
 write_object (Bucket, Key, Data, ContentType, Metadata) -> 
-    Pid = s3sup:get_random_pid(),
-    gen_server:call(Pid, {put, Bucket, Key, Data, ContentType, Metadata}).
+    call({put, Bucket, Key, Data, ContentType, Metadata}).
 
 read_term(Bucket, Key)->
     case read_object (Bucket, Key) of
@@ -86,56 +80,30 @@ read_term(Bucket, Key)->
     end.
 
 head(Bucket, Key)->
-    Pid = s3sup:get_random_pid(),
-    gen_server:call(Pid, {head, Bucket, Key}).
+    call({head, Bucket, Key}).
 
 read_object (Bucket, Key, Etag) -> 
-    Pid = s3sup:get_random_pid(),
-    gen_server:call(Pid, {get, Bucket, Key, Etag}).
+    call({get, Bucket, Key, Etag}).
     
 read_object (Bucket, Key) -> 
-    Pid = s3sup:get_random_pid(),
-    gen_server:call(Pid, {get, Bucket, Key}).
-
+    call({get, Bucket, Key}).
+    
 delete_object (Bucket, Key) -> 
-    Pid = s3sup:get_random_pid(),
-    gen_server:call(Pid, {delete, Bucket, Key}).
+    call({delete, Bucket, Key}).
 
-get_object (From, Bucket, Key) -> 
-    Pid = s3sup:get_random_pid(),
-    {ok, {Content, _Headers}} = gen_server:call(Pid, {get, Bucket, Key}),
-    From ! {s3object, Key, Content}. 
     
 % Gets objects in // from S3.
 %% option example: [{delimiter, "/"},{maxkeys,10},{prefix,"/foo"}]
+get_object({object_info, {"Key", Key}, _, _, _}, Bucket)->
+  call({get, Bucket, Key}).
+    
 get_objects(Bucket, Options)->
-    get_objects(Bucket, Options, ?TIMEOUT).
-get_objects(Bucket, Options, Timeout)->
-    {ok, Objects} = list_objects (Bucket, Options ),
-    timer:send_after(Timeout, self(), timeout),
-    lists:foreach(fun({object_info, {"Key", Key}, _, _, _})->
-        spawn(?MODULE, get_object,[self(), Bucket, Key ])
-    end, Objects),
-    R = lists:foldl(
-    fun (_N, timeout)->timeout;
-        (_N, Acc)->
-        receive
-            {s3object, K, R} -> 
-                [{K, R}|Acc];
-            timeout->
-                timeout
-        end
-        
-    end,[],  Objects),
-    case R of
-        timeout -> {error,timeout};
-        R -> {ok, R}
-    end.
+    {ok, Objects} = list_objects(Bucket, Options),
+    pmap(fun get_object/2,Objects, Bucket).
     
 %% option example: [{delimiter, "/"},{maxkeys,10},{prefix,"/foo"}]
 list_objects (Bucket, Options ) -> 
-    Pid = s3sup:get_random_pid(),
-    gen_server:call(Pid, {list, Bucket, Options }).
+    call({list, Bucket, Options }).
 list_objects (Bucket) -> 
     list_objects( Bucket, [] ).
 
@@ -168,7 +136,18 @@ policy(Policy)->
 stop(_State) ->
     ok.
 
-
+call(M)->
+    Pid = s3sup:get_random_pid(),
+    case gen_server:call(Pid, M, infinity) of
+      retry -> 
+          s3util:sleep(10),
+          call(M);
+      {timeout, _} ->
+           s3util:sleep(10),
+          call(M);
+      R -> R
+  end.
+  
 %%%%% Internal API stuff %%%%%%%%%
 get(Atom, Env)->
     case application:get_env(Atom) of
@@ -188,3 +167,15 @@ param(Name, Default)->
 		{ok, Value} -> Value;
 		_-> Default
 	end.
+
+%% Lifted from http://lukego.livejournal.com/6753.html	
+pmap(F,List, Bucket) ->
+      [wait_result(Worker) || Worker <- [spawn_worker(self(),F,E, Bucket) || E <- List]].
+spawn_worker(Parent, F, E, Bucket) ->
+      erlang:spawn_monitor(fun() -> Parent ! {self(), F(E, Bucket)} end).
+
+wait_result({Pid,Ref}) ->
+      receive
+	  {'DOWN', Ref, _, _, normal} -> receive {Pid,Result} -> Result end;
+	  {'DOWN', Ref, _, _, Reason} -> exit(Reason)
+      end.
