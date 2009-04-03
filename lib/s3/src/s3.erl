@@ -26,14 +26,13 @@
 	  
 %timer:tc(s3,get_objects,["ejabberd.conf", [{maxkeys, 20}]]).
 start()->
-    crypto:start(),
+    application:start(crypto),
     application:start(xmerl),
-    ibrowse:start(),
+    application:start(ibrowse),
     application:start(s3).
     
 
 start(_Type, _StartArgs) ->
-    
     ID = get(access, "AMAZON_ACCESS_KEY_ID"),
     Secret = get(secret, "AMAZON_SECRET_ACCESS_KEY"),
     SSL = param(ssl, false),
