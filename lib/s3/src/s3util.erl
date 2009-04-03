@@ -67,7 +67,7 @@ url_encode([H|T]) ->
             [H|url_encode(T)];
         H >= $0, $9 >= H ->
             [H|url_encode(T)];
-        H == $_; H == $.; H == $- -> % FIXME: more..
+        H == $_; H == $.;H == $~; H == $- -> % FIXME: more..
             [H|url_encode(T)];
         true ->
             case integer_to_hex(H) of
