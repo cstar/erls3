@@ -251,10 +251,11 @@ buildUrl(Bucket,Path,QueryParams, false) ->
 buildUrl(Bucket,Path,QueryParams, true) -> 
     "https://s3.amazonaws.com"++ canonicalizedResource(Bucket,Path) ++ queryParams(QueryParams).
 
-buildContentHeaders( <<>>, AdditionalHeaders ) -> AdditionalHeaders;
-buildContentHeaders( Contents, AdditionalHeaders ) -> 
+buildContentHeaders( <<>>, _ContentType, AdditionalHeaders ) -> AdditionalHeaders;
+buildContentHeaders( Contents, ContentType, AdditionalHeaders ) -> 
     ContentMD5 = crypto:md5(Contents),
-    [{"Content-MD5", binary_to_list(base64:encode(ContentMD5))}
+    [{"Content-MD5", binary_to_list(base64:encode(ContentMD5))},
+     {"Content-Type", ContentType},
      | AdditionalHeaders].
 buildOptions(<<>>, _ContentType, SSL)->
     [{stream_to, self()}, {is_ssl, SSL}, {ssl_options, []}];
@@ -278,7 +279,7 @@ genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Tim
         Date = httpd_util:rfc1123_date(),
         MethodString = string:to_upper( atom_to_list(Method) ),
         Url = buildUrl(Bucket,Path,QueryParams, SSL),
-        OriginalHeaders = buildContentHeaders( Contents, AdditionalHeaders ),
+        OriginalHeaders = buildContentHeaders( Contents, ContentType, AdditionalHeaders ),
         Signature = sign( SAK,
 	    	      stringToSign( MethodString,  ContentType, 
 	    			    Date, Bucket, Path, OriginalHeaders )),
