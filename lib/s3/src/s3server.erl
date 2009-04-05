@@ -76,7 +76,7 @@ handle_call({delete, Bucket }, From, State) ->
 % Object operations
 handle_call({put, Bucket, Key, Content, ContentType, AdditionalHeaders}, From, State) ->
     genericRequest(From, State, put, Bucket, Key, [], AdditionalHeaders, Content, ContentType, fun(_X, Headers) -> 
-            {value,{"etag",ETag}} = lists:keysearch( "etag", 1, Headers ),
+            {value,{"ETag",ETag}} = lists:keysearch( "ETag", 1, Headers ),
             ETag
         end);
     
