@@ -37,6 +37,14 @@ start(_Type, _StartArgs) ->
     Secret = get(secret, "AMAZON_SECRET_ACCESS_KEY"),
     SSL = param(ssl, false),
     N = param(workers, 1),
+    Memcached = param(memcached, false),
+    UseMemcached = case Memcached of
+        false ->
+            false;
+        {MHost, MPort}->
+            merle:connect(MHost, MPort),
+            true
+    end,
     Timeout = param(timeout, ?TIMEOUT),
     Port = if SSL == true -> 
             ssl:start(),
@@ -47,7 +55,7 @@ start(_Type, _StartArgs) ->
     if ID == error orelse Secret == error ->
             {error, "AWS credentials not set. Pass as application parameters or as env variables."};
         true ->
-            s3sup:start_link([ID, Secret, SSL, Timeout], N)
+            s3sup:start_link([ID, Secret, SSL, Timeout, UseMemcached], N)
 	end.
 	
 shutdown() ->

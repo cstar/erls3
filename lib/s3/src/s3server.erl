@@ -25,7 +25,7 @@
 -include_lib("xmerl/include/xmerl.hrl").
 -include("../include/s3.hrl").
 
--record(state, {ssl,access_key, secret_key, pending, timeout=?TIMEOUT}).
+-record(state, {ssl,access_key, secret_key, pending, cache=false, timeout=?TIMEOUT}).
 -record(request, {pid, callback, started, code, headers=[], content=[]}).
 %%====================================================================
 %% External functions
@@ -35,8 +35,8 @@
 %% @spec start_link() -> {ok, pid()} | {error, Reason}
 %% @end
 %%--------------------------------------------------------------------
-start_link([Access, Secret, SSL, Timeout]) ->
-    gen_server:start_link(?MODULE, [Access, Secret, SSL, Timeout], []).
+start_link([Access, Secret, SSL, Timeout, UseMemcached]) ->
+    gen_server:start_link(?MODULE, [Access, Secret, SSL, Timeout, UseMemcached], []).
 
 %%--------------------------------------------------------------------
 %% @doc Stops the server.
@@ -46,10 +46,10 @@ start_link([Access, Secret, SSL, Timeout]) ->
 stop() ->
     gen_server:cast(?MODULE, stop).
 
-init([Access, Secret, SSL, nil]) ->
-    {ok, #state{ssl = SSL,access_key=Access, secret_key=Secret,pending=gb_trees:empty()}};
-init([Access, Secret, SSL, Timeout]) ->
-    {ok, #state{ssl = SSL,access_key=Access, secret_key=Secret, timeout=Timeout, pending=gb_trees:empty()}}.
+init([Access, Secret, SSL, nil, UseMemcached]) ->
+    {ok, #state{ssl = SSL,access_key=Access, cache = UseMemcached, secret_key=Secret,pending=gb_trees:empty()}};
+init([Access, Secret, SSL, Timeout, UseMemcached]) ->
+    {ok, #state{ssl = SSL,access_key=Access, secret_key=Secret, cache = UseMemcached,timeout=Timeout, pending=gb_trees:empty()}}.
 
 
 
@@ -77,6 +77,7 @@ handle_call({delete, Bucket }, From, State) ->
 handle_call({put, Bucket, Key, Content, ContentType, AdditionalHeaders}, From, State) ->
     genericRequest(From, State, put, Bucket, Key, [], AdditionalHeaders, Content, ContentType, fun(_X, Headers) -> 
             {value,{"ETag",ETag}} = lists:keysearch( "ETag", 1, Headers ),
+            merle:set(Bucket++"/"++ Key, {Content, Headers}), 
             ETag
         end);
     
@@ -85,10 +86,34 @@ handle_call({ list, Bucket, Options }, From, State) ->
     Headers = lists:map( fun option_to_param/1, Options ),
     genericRequest(From, State, get, Bucket, "", Headers, [], <<>>, "",  fun parseBucketListXml/2 );
 
+    
+handle_call({ get, Bucket, Key}, From, #state{cache = true} = State)->
+    case merle:getkey(Bucket++"/"++Key) of
+        undefined ->
+            genericRequest(From, State, get,  Bucket, Key, [], [], <<>>, "", fun(B, H) -> 
+                merle:set(Bucket++"/"++ Key, {B,H}),
+                {B,H}
+             end);
+        Value ->
+            {reply, {ok, Value}, State}
+    end;
+handle_call({ get_with_key, Bucket, Key}, From, #state{cache = true} = State)->
+    case merle:getkey(Bucket++"/"++Key) of
+        undefined ->
+            genericRequest(From, State, get,  Bucket, Key, [], [], <<>>, "", fun(B, H) -> 
+                merle:set(Bucket++"/"++ Key, {B,H}),
+                {Key, B,H}
+            end);
+        {B,H} ->
+            {reply,{ok, {Key, B,H}}, State}
+    end;
+
 handle_call({ get, Bucket, Key, Etag}, From, State) ->
     genericRequest(From, State, get,  Bucket, Key, [], [{"If-None-Match", Etag}], <<>>, "", fun(B, H) -> {B,H} end);
+    
 handle_call({ get, Bucket, Key}, From, State) ->
     genericRequest(From, State, get,  Bucket, Key, [], [], <<>>, "", fun(B, H) -> {B,H} end);
+    
 handle_call({ get_with_key, Bucket, Key}, From, State) ->
     genericRequest(From, State, get,  Bucket, Key, [], [], <<>>, "", fun(B, H) -> {Key, B,H} end);
 handle_call({ head, Bucket, Key }, From, State) ->
@@ -176,7 +201,6 @@ handle_info({ibrowse_async_response_end,RequestId}, State = #state{pending=P})->
 		{value,#request{started=_Started}=R} -> 
 		    handle_http_response(R),
 		    %io:format("Query took ~p ms~n", [timer:now_diff(now(), Started)/1000]),
-		    
 			{noreply,State#state{pending=gb_trees:delete(RequestId, P)}};
 		none -> {noreply,State}
 			%% the requestid isn't here, probably the request was deleted after a timeout
