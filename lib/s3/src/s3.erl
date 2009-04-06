@@ -137,17 +137,7 @@ policy(Policy)->
 stop(_State) ->
     ok.
 
-call(M)->
-    Pid = s3sup:get_random_pid(),
-    case gen_server:call(Pid, M, infinity) of
-      retry -> 
-          s3util:sleep(10),
-          call(M);
-      {timeout, _} ->
-          s3util:sleep(10),
-          call(M);
-      R -> R
-  end.
+
 call(M)->
     call(M, 0).
 
@@ -183,7 +173,6 @@ param(Name, Default)->
 		{ok, Value} -> Value;
 		_-> Default
 	end.
-%s3:get_objects("drupal.ohmforce.com", []).
 
 %% Lifted from http://lukego.livejournal.com/6753.html	
 pmap(_F,[], _Bucket) -> [];
