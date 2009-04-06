@@ -176,14 +176,15 @@ handle_info({ibrowse_async_response_end,RequestId}, State = #state{pending=P})->
 		{value,#request{started=_Started}=R} -> 
 		    handle_http_response(R),
 		    %io:format("Query took ~p ms~n", [timer:now_diff(now(), Started)/1000]),
-		    io:format("Finished : pending size : ~p~n", [gb_trees:size(P)-1]),
+		    
 			{noreply,State#state{pending=gb_trees:delete(RequestId, P)}};
 		none -> {noreply,State}
 			%% the requestid isn't here, probably the request was deleted after a timeout
 	end;
-handle_info({ibrowse_async_response,RequestId,{error,req_timedout}}, State = #state{pending=P})->
+handle_info({ibrowse_async_response,RequestId,{error,Error}}, State = #state{pending=P}) ->
     case gb_trees:lookup(RequestId,P) of
-		{value,#request{pid=Pid}=R} -> 
+		{value,#request{pid=Pid}} -> 
+		    error_logger:warning_msg("Warning query failed (retrying) : ~p~n", [Error]),
 		    gen_server:reply(Pid, retry),
 		    {noreply,State#state{pending=gb_trees:delete(RequestId, P)}};
 		none -> {noreply,State}
@@ -305,7 +306,6 @@ genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Tim
     case ibrowse:send_req(Url, Headers,  Method, Contents,Options, Timeout) of
         {ibrowse_req_id,RequestId} ->
             Pendings = gb_trees:insert(RequestId,#request{pid=From,started=now(), callback=Callback},P),
-            io:format("New query pending size : ~p~n", [gb_trees:size(Pendings)]),
             {noreply, State#state{pending=Pendings}};
         {error,E} when E =:= retry_later orelse E =:= conn_failed ->
             {reply, retry, State};

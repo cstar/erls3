@@ -173,6 +173,7 @@ param(Name, Default)->
 		{ok, Value} -> Value;
 		_-> Default
 	end.
+%s3:get_objects("drupal.ohmforce.com", []).
 
 %% Lifted from http://lukego.livejournal.com/6753.html	
 pmap(_F,[], _Bucket) -> [];
