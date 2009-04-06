@@ -73,24 +73,19 @@ handle_call({ put, Bucket }, From, State) ->
 handle_call({delete, Bucket }, From, State) ->
     genericRequest(From, State, delete, Bucket, "", [], [],<<>>, "", fun(_,_) -> ok end);
 
-% Object operations
-handle_call({put, Bucket, Key, Content, ContentType, AdditionalHeaders}, From, State) ->
+% Object operations with memcached
+handle_call({put, Bucket, Key, Content, ContentType, AdditionalHeaders}, From, #state{cache = true}=State) ->
     genericRequest(From, State, put, Bucket, Key, [], AdditionalHeaders, Content, ContentType, fun(_X, Headers) -> 
             {value,{"ETag",ETag}} = lists:keysearch( "ETag", 1, Headers ),
             merle:set(Bucket++"/"++ Key, {Content, Headers}), 
             ETag
         end);
     
-
-handle_call({ list, Bucket, Options }, From, State) ->
-    Headers = lists:map( fun option_to_param/1, Options ),
-    genericRequest(From, State, get, Bucket, "", Headers, [], <<>>, "",  fun parseBucketListXml/2 );
-
-    
 handle_call({ get, Bucket, Key}, From, #state{cache = true} = State)->
     case merle:getkey(Bucket++"/"++Key) of
         undefined ->
-            genericRequest(From, State, get,  Bucket, Key, [], [], <<>>, "", fun(B, H) -> 
+            genericRequest(From, State, get,  Bucket, Key, [], [], <<>>, "", 
+            fun(B, H) -> 
                 merle:set(Bucket++"/"++ Key, {B,H}),
                 {B,H}
              end);
@@ -100,13 +95,34 @@ handle_call({ get, Bucket, Key}, From, #state{cache = true} = State)->
 handle_call({ get_with_key, Bucket, Key}, From, #state{cache = true} = State)->
     case merle:getkey(Bucket++"/"++Key) of
         undefined ->
-            genericRequest(From, State, get,  Bucket, Key, [], [], <<>>, "", fun(B, H) -> 
+            genericRequest(From, State, get,  Bucket, Key, [], [], <<>>, "", 
+            fun(B, H) -> 
                 merle:set(Bucket++"/"++ Key, {B,H}),
                 {Key, B,H}
             end);
         {B,H} ->
             {reply,{ok, {Key, B,H}}, State}
-    end;
+    end;        
+handle_call({delete, Bucket, Key }, From, State) ->
+    genericRequest(From, State, delete, Bucket, Key, [], [], <<>>, "", 
+        fun(_,_) -> 
+            merle:delete(Bucket++"/"++ Key),
+            ok 
+        end);
+
+        
+%object operations no cache
+handle_call({put, Bucket, Key, Content, ContentType, AdditionalHeaders}, From, State) ->
+    genericRequest(From, State, put, Bucket, Key, [], AdditionalHeaders, Content, ContentType, fun(_X, Headers) -> 
+            {value,{"ETag",ETag}} = lists:keysearch( "ETag", 1, Headers ),
+            ETag
+        end);
+
+handle_call({ list, Bucket, Options }, From, State) ->
+    Headers = lists:map( fun option_to_param/1, Options ),
+    genericRequest(From, State, get, Bucket, "", Headers, [], <<>>, "",  fun parseBucketListXml/2 );
+
+
 
 handle_call({ get, Bucket, Key, Etag}, From, State) ->
     genericRequest(From, State, get,  Bucket, Key, [], [{"If-None-Match", Etag}], <<>>, "", fun(B, H) -> {B,H} end);

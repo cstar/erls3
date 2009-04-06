@@ -45,6 +45,7 @@ start(_Type, _StartArgs) ->
             merle:connect(MHost, MPort),
             true
     end,
+    random:seed(),
     Timeout = param(timeout, ?TIMEOUT),
     Port = if SSL == true -> 
             ssl:start(),
