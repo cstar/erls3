@@ -47,7 +47,7 @@ stop() ->
     gen_server:cast(?MODULE, stop).
 
 init([Access, Secret, SSL, nil]) ->
-    {ok, #state{ssl = SSL,access_key=Access, secret_key=Secret, pending=gb_trees:empty()}};
+    {ok, #state{ssl = SSL,access_key=Access, secret_key=Secret,pending=gb_trees:empty()}};
 init([Access, Secret, SSL, Timeout]) ->
     {ok, #state{ssl = SSL,access_key=Access, secret_key=Secret, timeout=Timeout, pending=gb_trees:empty()}}.
 
@@ -89,7 +89,8 @@ handle_call({ get, Bucket, Key, Etag}, From, State) ->
     genericRequest(From, State, get,  Bucket, Key, [], [{"If-None-Match", Etag}], <<>>, "", fun(B, H) -> {B,H} end);
 handle_call({ get, Bucket, Key}, From, State) ->
     genericRequest(From, State, get,  Bucket, Key, [], [], <<>>, "", fun(B, H) -> {B,H} end);
-
+handle_call({ get_with_key, Bucket, Key}, From, State) ->
+    genericRequest(From, State, get,  Bucket, Key, [], [], <<>>, "", fun(B, H) -> {Key, B,H} end);
 handle_call({ head, Bucket, Key }, From, State) ->
     genericRequest(From, State, head,  Bucket, Key, [], [], <<>>, "", fun(_, H) -> H end);
 
@@ -145,8 +146,14 @@ handle_cast(_Msg, State) ->
 handle_info({ibrowse_async_headers,RequestId,Code,Headers },State = #state{pending=P}) ->
     %%?DEBUG("******* Response :  ~p~n", [Response]),
 	case gb_trees:lookup(RequestId,P) of
-		{value,#request{}=R} -> 
-			{noreply,State#state{pending=gb_trees:enter(RequestId,R#request{code = Code, headers=Headers},P)}};
+		{value,#request{pid = Pid }=R} -> 
+		    {ICode, []} = string:to_integer(Code),
+		    if ICode >= 500 ->
+		        gen_server:reply(Pid,retry),
+		        {noreply,State#state{pending=gb_trees:delete(RequestId, P)}};
+		    true ->
+			    {noreply,State#state{pending=gb_trees:enter(RequestId,R#request{code = Code, headers=Headers},P)}}
+			end;
 		none -> 
 		    {noreply,State}
 			%% the requestid isn't here, probably the request was deleted after a timeout
@@ -174,7 +181,17 @@ handle_info({ibrowse_async_response_end,RequestId}, State = #state{pending=P})->
 		none -> {noreply,State}
 			%% the requestid isn't here, probably the request was deleted after a timeout
 	end;
-handle_info(_Info, State) ->
+handle_info({ibrowse_async_response,RequestId,{error,req_timedout}}, State = #state{pending=P})->
+    case gb_trees:lookup(RequestId,P) of
+		{value,#request{pid=Pid}=R} -> 
+		    gen_server:reply(Pid, retry),
+		    {noreply,State#state{pending=gb_trees:delete(RequestId, P)}};
+		none -> {noreply,State}
+			%% the requestid isn't here, probably the request was deleted after a timeout
+	end;	
+
+handle_info(Info, State) ->
+    io:format("Unkown Info : ~p~n", [Info]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -255,7 +272,7 @@ buildContentHeaders( <<>>, _ContentType, AdditionalHeaders ) -> AdditionalHeader
 buildContentHeaders( Contents, ContentType, AdditionalHeaders ) -> 
     ContentMD5 = crypto:md5(Contents),
     [{"Content-MD5", binary_to_list(base64:encode(ContentMD5))},
-     {"Content-Type", ContentType},
+     {"Content-Type", ContentType}
      | AdditionalHeaders].
 buildOptions(<<>>, _ContentType, SSL)->
     [{stream_to, self()}, {is_ssl, SSL}, {ssl_options, []}];
@@ -271,40 +288,30 @@ content_length(Content) when is_list(Content)->
     integer_to_list(length(Content)).
     
 genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Timeout, pending=P }=State, 
-                Method, Bucket, Path, QueryParams, AdditionalHeaders,Contents, ContentType, Callback ) ->
-    Stack = gb_trees:size(P),
-    if Stack  > 100 ->
-        {reply, retry, State};
-    true ->
-        Date = httpd_util:rfc1123_date(),
-        MethodString = string:to_upper( atom_to_list(Method) ),
-        Url = buildUrl(Bucket,Path,QueryParams, SSL),
-        OriginalHeaders = buildContentHeaders( Contents, ContentType, AdditionalHeaders ),
-        Signature = sign( SAK,
-	    	      stringToSign( MethodString,  ContentType, 
-	    			    Date, Bucket, Path, OriginalHeaders )),
-        
-        Headers = [ {"Authorization","AWS " ++ AKI ++ ":" ++ Signature },
-	    	        {"Host", "s3.amazonaws.com" },
-	    	        {"Date", Date } 
-	                | OriginalHeaders ],
-        Options = buildOptions(Contents, ContentType, SSL), 
-        %io:format("Sending request ~p~n", [Url]),
-        
-        case ibrowse:send_req(Url, Headers,  Method, Contents,Options, Timeout) of
-            {ibrowse_req_id,RequestId} ->
-                Pendings = gb_trees:insert(RequestId,#request{pid=From,started=now(), callback=Callback},P),
-                io:format("New query pending size : ~p~n", [gb_trees:size(P)]),
-                {noreply, State#state{pending=Pendings}};
-            {error,E} when E =:= retry_later orelse E =:= conn_failed ->
-                io:format("Waiting on retry Error : ~p, Pid : ~p~n", [E, self()]),
-                {reply, retry, State};
-                %s3util:sleep(10),
-                %genericRequest(From, State,Method, Bucket, Path, QueryParams, AdditionalHeaders,Contents, ContentType, Callback );
-            {error, E} ->
-                io:format("Error : ~p, Pid : ~p~n", [E, self()]),
-                {reply, {error, E, "Error Occured"}, State}
-        end
+            Method, Bucket, Path, QueryParams, AdditionalHeaders,Contents, ContentType, Callback ) ->
+    Date = httpd_util:rfc1123_date(),
+    MethodString = string:to_upper( atom_to_list(Method) ),
+    Url = buildUrl(Bucket,Path,QueryParams, SSL),
+    OriginalHeaders = buildContentHeaders( Contents, ContentType, AdditionalHeaders ),
+    Signature = sign( SAK,
+		      stringToSign( MethodString,  ContentType, 
+				    Date, Bucket, Path, OriginalHeaders )),
+    
+    Headers = [ {"Authorization","AWS " ++ AKI ++ ":" ++ Signature },
+		        {"Host", "s3.amazonaws.com" },
+		        {"Date", Date } 
+	            | OriginalHeaders ],
+    Options = buildOptions(Contents, ContentType, SSL), 
+    case ibrowse:send_req(Url, Headers,  Method, Contents,Options, Timeout) of
+        {ibrowse_req_id,RequestId} ->
+            Pendings = gb_trees:insert(RequestId,#request{pid=From,started=now(), callback=Callback},P),
+            io:format("New query pending size : ~p~n", [gb_trees:size(Pendings)]),
+            {noreply, State#state{pending=Pendings}};
+        {error,E} when E =:= retry_later orelse E =:= conn_failed ->
+            {reply, retry, State};
+        {error, E} ->
+            io:format("Error : ~p, Pid : ~p~n", [E, self()]),
+            {reply, {error, E, "Error Occured"}, State}
     end.
 
     

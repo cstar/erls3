@@ -43,7 +43,7 @@ start(_Type, _StartArgs) ->
             443;
         true -> 80
     end,
-    ibrowse:set_dest("s3.amazonaws.com", Port, [{max_sessions, 50},{max_pipeline_size, 20}]),
+    ibrowse:set_dest("s3.amazonaws.com", Port, [{max_sessions, 100},{max_pipeline_size, 10}]),
     if ID == error orelse Secret == error ->
             {error, "AWS credentials not set. Pass as application parameters or as env variables."};
         true ->
@@ -95,7 +95,8 @@ delete_object (Bucket, Key) ->
 % Gets objects in // from S3.
 %% option example: [{delimiter, "/"},{maxkeys,10},{prefix,"/foo"}]
 get_object({object_info, {"Key", Key}, _, _, _}, Bucket)->
-  call({get, Bucket, Key}).
+  {ok, Obj} = call({get_with_key, Bucket, Key}),
+  Obj.
     
 get_objects(Bucket, Options)->
     {ok, Objects} = list_objects(Bucket, Options),
@@ -167,15 +168,24 @@ param(Name, Default)->
 		{ok, Value} -> Value;
 		_-> Default
 	end.
+%s3:get_objects("drupal.ohmforce.com", []).
 
 %% Lifted from http://lukego.livejournal.com/6753.html	
+pmap(_F,[], _Bucket) -> [];
 pmap(F,List, Bucket) ->
-      [wait_result(Worker) || Worker <- [spawn_worker(self(),F,E, Bucket) || E <- List]].
+    Pid = self(),
+    spawn(fun()->
+        [spawn_worker(Pid,F,E, Bucket) || E <- List] 
+    end),
+        lists:map(fun(_N)->
+            wait_result()
+    end, lists:seq(1, length(List))).
 spawn_worker(Parent, F, E, Bucket) ->
-      erlang:spawn_monitor(fun() -> Parent ! {self(), F(E, Bucket)} end).
+    spawn_link(fun() -> Parent ! {self(), F(E, Bucket)} end).
 
-wait_result({Pid,Ref}) ->
-      receive
-	  {'DOWN', Ref, _, _, normal} -> receive {Pid,Result} -> Result end;
-	  {'DOWN', Ref, _, _, Reason} -> exit(Reason)
-      end.
+wait_result() ->
+    receive
+        {'EXIT', Reason} -> exit(Reason);
+	    {_Pid,Result} -> Result
+	    
+    end.
