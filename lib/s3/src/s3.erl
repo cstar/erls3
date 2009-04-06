@@ -43,7 +43,7 @@ start(_Type, _StartArgs) ->
             443;
         true -> 80
     end,
-    ibrowse:set_dest("s3.amazonaws.com", Port, [{max_sessions, 100},{max_pipeline_size, 10}]),
+    ibrowse:set_dest("s3.amazonaws.com", Port, [{max_sessions, 100},{max_pipeline_size, 20}]),
     if ID == error orelse Secret == error ->
             {error, "AWS credentials not set. Pass as application parameters or as env variables."};
         true ->
@@ -144,11 +144,26 @@ call(M)->
           s3util:sleep(10),
           call(M);
       {timeout, _} ->
-           s3util:sleep(10),
+          s3util:sleep(10),
           call(M);
       R -> R
   end.
-  
+call(M)->
+    call(M, 0).
+
+call(M, Retries)->
+    Pid = s3sup:get_random_pid(),
+    case gen_server:call(Pid, M, infinity) of
+      retry -> 
+          Sleep = random:uniform(math:pow(4, Retries)*10),
+          s3util:sleep(Sleep),
+          call(M, Retries + 1);
+     {timeout, _} ->
+         Sleep = random:uniform(math:pow(4, Retries)*10),
+          s3util:sleep(Sleep),
+          call(M, Retries + 1);
+      R -> R
+  end.  
 %%%%% Internal API stuff %%%%%%%%%
 get(Atom, Env)->
     case application:get_env(Atom) of
