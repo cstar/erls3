@@ -83,7 +83,7 @@ handle_call({put, Bucket, Key, Content, ContentType, AdditionalHeaders}, From, #
     
 handle_call({ get, Bucket, Key}, From, #state{cache = true} = State)->
     case merle:getkey(Bucket++"/"++Key) of
-        undefined ->
+         E when E =:= undefined orelse E =:= timeout ->
             genericRequest(From, State, get,  Bucket, Key, [], [], <<>>, "", 
             fun(B, H) -> 
                 merle:set(Bucket++"/"++ Key, {B,H}),
@@ -94,7 +94,7 @@ handle_call({ get, Bucket, Key}, From, #state{cache = true} = State)->
     end;
 handle_call({ get_with_key, Bucket, Key}, From, #state{cache = true} = State)->
     case merle:getkey(Bucket++"/"++Key) of
-        undefined ->
+        E when E =:= undefined orelse E =:= timeout->
             genericRequest(From, State, get,  Bucket, Key, [], [], <<>>, "", 
             fun(B, H) -> 
                 merle:set(Bucket++"/"++ Key, {B,H}),

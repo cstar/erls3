@@ -24,14 +24,18 @@ However it should behave pretty well under high load with moderately sized packe
 Requirements
 ------------
 
-- OTP-R12B (released on 2007/12/05).  Required due to a bug in inets'
-  handling of the HTTP 204 code [bug OTP-6982] which is heavily used by
-  S3.  Get it at http://erlang.org/download.html
+- OTP-R12B (released on 2007/12/05). 
 
 - An Amazon Web Services account - see http://www.amazonaws.com
 
+- ibrowse (http://github.com/cstar/ibrowse/tree/master)
+
 - rake and ruby
 
+- optionally : merle and ketama for caching
+    merle is available here : http://github.com/cstar/merle/tree/master
+    libketama is available here : http://www.audioscrobbler.net/development/ketama/
+    
 = BUILDING =
 
 Type rake.
@@ -45,16 +49,20 @@ You'll need to set your credentials to Amazon SDB :
 - by setting the AMAZON_ACCESS_KEY_ID and AMAZON_SECRET_ACCESS_KEY environment variable (recommended)
 
 = TODO = 
-- automatically retry in case of transient failure
 - support ACL configuration
 - Improve error handling
 - Support for EU-based S3 buckets
-- Support for streaming objects to/from disk (inets supports streaming
-    to disk, but not from disk just now) (harder)
+- Support for streaming objects to/from disk (should be easy with ibrowse)
 - Usage will probably show some bugs and their ugly faces.
 
 Version History
 ---------------
+v0.5 - 2009/03/09
+  - automatic retries in case of (always transient) failures
+  - get_objects : fetching objets from S3 in parallel
+  - bugfixes (thanks magog)
+  - implemented memcached caching with merle and ketama (get this version : http://github.com/cstar/merle/tree/master)
+  
 v0.4 - 2009/03/02
   - added support for HEAD
   - Content-MD5 is implemented

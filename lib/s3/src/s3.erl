@@ -41,8 +41,9 @@ start(_Type, _StartArgs) ->
     UseMemcached = case Memcached of
         false ->
             false;
-        {MHost, MPort}->
-            merle:connect(MHost, MPort),
+        FileName -> %ketama filename
+            application:set_env(merle, file, FileName),
+            merle:start(),
             true
     end,
     random:seed(),
@@ -201,5 +202,4 @@ wait_result() ->
     receive
         {'EXIT', Reason} -> exit(Reason);
 	    {_Pid,Result} -> Result
-	    
     end.
