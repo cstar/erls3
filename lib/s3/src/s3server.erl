@@ -77,36 +77,36 @@ handle_call({delete, Bucket }, From, State) ->
 handle_call({put, Bucket, Key, Content, ContentType, AdditionalHeaders}, From, #state{cache = true}=State) ->
     genericRequest(From, State, put, Bucket, Key, [], AdditionalHeaders, Content, ContentType, fun(_X, Headers) -> 
             {value,{"ETag",ETag}} = lists:keysearch( "ETag", 1, Headers ),
-            merle:set(Bucket++"/"++ Key, {Content, Headers}), 
+            s3util:mdelete(Bucket, Key),
             ETag
         end);
     
 handle_call({ get, Bucket, Key}, From, #state{cache = true} = State)->
-    case merle:getkey(Bucket++"/"++Key) of
-         E when E =:= undefined orelse E =:= timeout ->
+    case s3util:mfetch(Bucket, Key) of
+         undefined  ->
             genericRequest(From, State, get,  Bucket, Key, [], [], <<>>, "", 
             fun(B, H) -> 
-                merle:set(Bucket++"/"++ Key, {B,H}),
+                s3util:mstore(Bucket, Key, B, H),
                 {B,H}
              end);
         Value ->
             {reply, {ok, Value}, State}
     end;
 handle_call({ get_with_key, Bucket, Key}, From, #state{cache = true} = State)->
-    case merle:getkey(Bucket++"/"++Key) of
-        E when E =:= undefined orelse E =:= timeout->
+    case s3util:mfetch(Bucket, Key) of
+        undefined ->
             genericRequest(From, State, get,  Bucket, Key, [], [], <<>>, "", 
             fun(B, H) -> 
-                merle:set(Bucket++"/"++ Key, {B,H}),
+                s3util:mstore(Bucket, Key, B, H),
                 {Key, B,H}
             end);
         {B,H} ->
             {reply,{ok, {Key, B,H}}, State}
     end;        
-handle_call({delete, Bucket, Key }, From, State) ->
+handle_call({delete, Bucket, Key }, From, #state{cache = true} =State) ->
     genericRequest(From, State, delete, Bucket, Key, [], [], <<>>, "", 
         fun(_,_) -> 
-            merle:delete(Bucket++"/"++ Key),
+            s3util:mdelete(Bucket, Key),
             ok 
         end);
 
