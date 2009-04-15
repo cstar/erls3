@@ -1,6 +1,6 @@
 %% -*-erlang-*-   ; 
 {release,
- {"s3", ""},
+ {"s3", "Access S3 from erlang"},
  {erts, "_"},
  [{kernel, "_"},
   {stdlib, "_"},
