@@ -1,5 +1,5 @@
 #-*-ruby-*-
 require 'rake'
 
-task :default => ["erlang:compile", "erlang:releases"]
+task :default => ["erlang:compile"]
 task :install => ["erlang:install"]
