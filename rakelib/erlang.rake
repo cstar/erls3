@@ -383,7 +383,8 @@ namespace :erlang do
   task :install =>  [:compile] do |t|
     FileList.new('lib/*').each do |dir|
       vsn = extract_version_information("#{dir}/vsn.config","vsn").gsub("\"","")
-      sh "cp -R #{dir} #{erlang_home}/#{dir}-#{vsn}"
+      sh "mkdir -p #{erlang_home}/#{dir}-#{vsn}"
+      sh "cp -R #{dir}/* #{erlang_home}/#{dir}-#{vsn}"
     end
   end
 

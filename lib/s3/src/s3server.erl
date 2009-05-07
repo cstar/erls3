@@ -231,8 +231,8 @@ handle_info({ibrowse_async_response,RequestId,{error,Error}}, State = #state{pen
 			%% the requestid isn't here, probably the request was deleted after a timeout
 	end;	
 
-handle_info(Info, State) ->
-    io:format("Unkown Info : ~p~n", [Info]),
+handle_info(_Info, State) ->
+    %io:format("Unkown Info : ~p~n", [Info]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -295,7 +295,6 @@ stringToSign ( Verb, ContentType, Date, Bucket, Path, OriginalHeaders ) ->
     s3util:string_join( Parts, "\n") ++ canonicalizedResource(Bucket, Path).
     
 sign (Key,Data) ->
-    %io:format("Data being signed is ~s~n", [Data]),
     binary_to_list( base64:encode( crypto:sha_mac(Key,Data) ) ).
 
 queryParams( [] ) -> "";
@@ -350,7 +349,6 @@ genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Tim
         {error,E} when E =:= retry_later orelse E =:= conn_failed ->
             {reply, retry, State};
         {error, E} ->
-            io:format("Error : ~p, Pid : ~p~n", [E, self()]),
             {reply, {error, E, "Error Occured"}, State}
     end.
 
