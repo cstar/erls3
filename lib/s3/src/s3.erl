@@ -26,6 +26,7 @@
 	  
 
 start()->
+    application:start(sasl),
     application:start(crypto),
     application:start(xmerl),
     application:start(ibrowse),
@@ -85,7 +86,7 @@ write_object (Bucket, Key, Data, ContentType, Metadata) ->
 
 read_term(Bucket, Key)->
     case read_object (Bucket, Key) of
-        {ok, {B, H}} -> {ok, {binary_to_term(B), H}};
+        {ok, {B, H}} -> {ok, {binary_to_term(list_to_binary(B)), H}};
         E -> E
     end.
 
