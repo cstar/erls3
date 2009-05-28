@@ -21,8 +21,15 @@
 %% API
 -export([
       read_term/2, write_term/3,
-	  list_buckets/0, create_bucket/1, delete_bucket/1, link_to/3, head/2, policy/1, get_objects/2,
-	  list_objects/2, list_objects/1, write_object/4, write_object/5, read_object/2, read_object/3, delete_object/2 ]).
+	  list_buckets/0, create_bucket/1, 
+	  delete_bucket/1, link_to/3, 
+	  head/2, policy/1, get_objects/2,
+	  list_objects/2, list_objects/1, 
+	  write_object/4, write_object/5, 
+	  read_object/2, read_object/3, 
+	  delete_object/2,
+	  write_from_file/5,
+	  read_to_file/3 ]).
 	  
 
 start()->
@@ -54,7 +61,8 @@ start(_Type, _StartArgs) ->
             443;
         true -> 80
     end,
-    ibrowse:set_dest("s3.amazonaws.com", Port, [{max_sessions, 100},{max_pipeline_size, 20}]),
+    ibrowse:set_max_sessions("s3.amazonaws.com", Port,100),
+    ibrowse:set_max_pipeline_size("s3.amazonaws.com", Port,20),
     if ID == error orelse Secret == error ->
             {error, "AWS credentials not set. Pass as application parameters or as env variables."};
         true ->
@@ -75,6 +83,12 @@ delete_bucket (Name) ->
 list_buckets ()      -> 
     call({listbuckets}).
 
+write_from_file(Bucket, Key, Filename, ContentType, Metadata)->
+    call({from_file, Bucket, Key,Filename, ContentType, Metadata}).
+    
+read_to_file(Bucket, Key, Filename)->
+    call({to_file, Bucket, Key, Filename}).
+    
 write_term(Bucket, Key, Term)->
     write_object (Bucket, Key,term_to_binary(Term), "application/poet", []).
 

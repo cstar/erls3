@@ -21,12 +21,13 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, 
 	 terminate/2, code_change/3]).
-
+	 
+-include_lib("kernel/include/file.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 -include("../include/s3.hrl").
 
 -record(state, {ssl,access_key, secret_key, pending, cache=false, timeout=?TIMEOUT}).
--record(request, {pid, callback, started, code, headers=[], content=[]}).
+-record(request, {pid, callback, started, code, to_file=false, headers=[], content=[]}).
 %%====================================================================
 %% External functions
 %%====================================================================
@@ -122,7 +123,33 @@ handle_call({ list, Bucket, Options }, From, State) ->
     Headers = lists:map( fun option_to_param/1, Options ),
     genericRequest(From, State, get, Bucket, "", Headers, [], <<>>, "",  fun parseBucketListXml/2 );
 
+handle_call({to_file, Bucket, Key, Filename}, From, State)->
+    genericRequest(From, State, get,  Bucket, Key, [], [], <<>>, "", 
+            fun(_B, H) -> {Key,Filename, H} 
+    end, Filename);
 
+handle_call({from_file, Bucket, Key,Filename, ContentType, AdditionalHeaders}, From, State)->
+    case get_fd(Filename, [read, binary, read_ahead]) of
+        {error, E} ->
+            {reply,{error, E}, State};
+        Fd ->
+            Fun = fun(read)->
+                    case file:read(Fd, 65536) of
+                        {ok, R} ->
+                            {ok, R, read};
+                        O->O
+                    end;
+                (size)->
+                   {ok, #file_info{size=Size}} = file:read_file_info(Filename),
+                   Size
+            end,
+            genericRequest(From, State, put,  Bucket, Key, [], AdditionalHeaders, {Fun, read}, ContentType, 
+                    fun(_X, Headers) -> 
+                        {value,{"ETag",ETag}} = lists:keysearch( "ETag", 1, Headers ),
+                        ETag
+            end)
+    end;
+        
 
 handle_call({ get, Bucket, Key, Etag}, From, State) ->
     genericRequest(From, State, get,  Bucket, Key, [], [{"If-None-Match", Etag}], <<>>, "", fun(B, H) -> {B,H} end);
@@ -207,14 +234,27 @@ handle_info({ibrowse_async_response,_RequestId,chunk_end },State) ->
 handle_info({ibrowse_async_response,RequestId,Body },State = #state{pending=P}) when is_list(Body)->
     %?DEBUG("******* Response :  ~p~n", [Response]),
 	case gb_trees:lookup(RequestId,P) of
-		{value,#request{content=Content}=R} -> 
+		{value,#request{content=Content, to_file=false}=R} -> 
 			{noreply,State#state{pending=gb_trees:enter(RequestId,R#request{content=Content ++ Body}, P)}};
+		{value,#request{to_file=Fd}} ->
+		    case file:write(Fd,Body) of
+	            ok ->
+	                ok;
+	            {error, Reason} ->
+	                {error, {file_write_error, Reason}} %%TODO use error and cancel transfer.
+            end,
+		    {noreply,State};
 		none -> {noreply,State}
 			%% the requestid isn't here, probably the request was deleted after a timeout
 	end;
 handle_info({ibrowse_async_response_end,RequestId}, State = #state{pending=P})->
     case gb_trees:lookup(RequestId,P) of
-		{value,#request{started=_Started}=R} -> 
+		{value,#request{started=_Started, to_file=Fd}=R} -> 
+		    if Fd /= false ->
+		        file:close(Fd);
+		    true ->
+		        ok
+		    end,
 		    handle_http_response(R),
 		    %io:format("Query took ~p ms~n", [timer:now_diff(now(), Started)/1000]),
 			{noreply,State#state{pending=gb_trees:delete(RequestId, P)}};
@@ -309,26 +349,38 @@ buildUrl(Bucket,Path,QueryParams, true) ->
     "https://s3.amazonaws.com"++ canonicalizedResource(Bucket,Path) ++ queryParams(QueryParams).
 
 buildContentHeaders( <<>>, _ContentType, AdditionalHeaders ) -> AdditionalHeaders;
+buildContentHeaders( {_F, read} = C, ContentType, AdditionalHeaders ) -> 
+    [ {"Content-Type", ContentType}, %%TODO no md5 when upstreaming for the moment.
+      {"Content-Length", content_length(C)}
+     | AdditionalHeaders];
 buildContentHeaders( Contents, ContentType, AdditionalHeaders ) -> 
     ContentMD5 = crypto:md5(Contents),
     [{"Content-MD5", binary_to_list(base64:encode(ContentMD5))},
      {"Content-Type", ContentType}
      | AdditionalHeaders].
+
 buildOptions(<<>>, _ContentType, SSL)->
-    [{stream_to, self()}, {is_ssl, SSL}, {ssl_options, []}];
+     [{stream_to, self()},{is_ssl, SSL}, {ssl_options, []}];
+
 buildOptions(Content, ContentType,SSL)->
     [{content_length, content_length(Content)},
     {content_type, ContentType},
-    {is_ssl, SSL},{ssl_options, []},
-    {stream_to, self()}].
-    
+    {is_ssl, SSL},{ssl_options, []},{stream_to, self()}].
+
+content_length({F, read})->
+    integer_to_list(F(size)); 
 content_length(Content) when is_binary(Content)->
     integer_to_list(size(Content));
 content_length(Content) when is_list(Content)->
     integer_to_list(length(Content)).
     
+genericRequest(From, State, 
+            Method, Bucket, Path, QueryParams, AdditionalHeaders,Contents, ContentType, Callback) ->
+    genericRequest(From, State, 
+            Method, Bucket, Path, QueryParams, AdditionalHeaders,Contents, ContentType, Callback, false).
+            
 genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Timeout, pending=P }=State, 
-            Method, Bucket, Path, QueryParams, AdditionalHeaders,Contents, ContentType, Callback ) ->
+            Method, Bucket, Path, QueryParams, AdditionalHeaders,Contents, ContentType, Callback, ToFile ) ->
     Date = httpd_util:rfc1123_date(),
     MethodString = string:to_upper( atom_to_list(Method) ),
     Url = buildUrl(Bucket,Path,QueryParams, SSL),
@@ -342,18 +394,30 @@ genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Tim
 		        {"Date", Date } 
 	            | OriginalHeaders ],
     Options = buildOptions(Contents, ContentType, SSL), 
-    case ibrowse:send_req(Url, Headers,  Method, Contents,Options, Timeout) of
-        {ibrowse_req_id,RequestId} ->
-            Pendings = gb_trees:insert(RequestId,#request{pid=From,started=now(), callback=Callback},P),
-            {noreply, State#state{pending=Pendings}};
-        {error,E} when E =:= retry_later orelse E =:= conn_failed ->
-            {reply, retry, State};
-        {error, E} ->
-            {reply, {error, E, "Error Occured"}, State}
+    %io:format("Options : ~p~nHeaders : ~p~nContents : ~p~n", [Options, Headers, Contents]),
+    case get_fd(ToFile, [write, delayed_write, raw]) of
+        {error, R} ->
+            {reply, {error, R, "Error Occured"}, State};
+        Fd ->
+            case ibrowse:send_req(Url, Headers,  Method, Contents,Options, Timeout) of
+                {ibrowse_req_id,RequestId} ->
+                    Pendings = gb_trees:insert(RequestId,#request{pid=From, to_file=Fd, started=now(), callback=Callback},P),
+                    {noreply, State#state{pending=Pendings}};
+                {error,E} when E =:= retry_later orelse E =:= conn_failed ->
+                    {reply, retry, State};
+                {error, E} ->
+                    {reply, {error, E, "Error Occured"}, State}
+            end
     end.
 
-    
-
+get_fd(false, _Opts)->false;
+get_fd(FileName, Opts)->
+    case file:open(FileName, Opts) of
+	{ok, Fd} ->
+	    Fd;
+	{error, Reason} ->
+	    {error,  Reason}
+	end.
 
 parseBucketListXml (XmlDoc, _H) ->
     {Xml, _Rest} = xmerl_scan:string(XmlDoc),
