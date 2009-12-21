@@ -29,7 +29,8 @@
 	  read_object/2, read_object/3, 
 	  delete_object/2,
 	  write_from_file/5,
-	  read_to_file/3 ]).
+	  read_to_file/3,
+	  copy/4 ]).
 	  
 
 start()->
@@ -103,6 +104,9 @@ read_term(Bucket, Key)->
         {ok, {B, H}} -> {ok, {binary_to_term(list_to_binary(B)), H}};
         E -> E
     end.
+
+copy(SrcBucket, SrcKey, DestBucket, DestKey)->
+  call({copy, DestBucket, DestKey,[{"x-amz-copy-source", "/"++SrcBucket++"/" ++ SrcKey}]}).
 
 head(Bucket, Key)->
     call({head, Bucket, Key}).

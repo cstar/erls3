@@ -119,6 +119,9 @@ handle_call({put, Bucket, Key, Content, ContentType, AdditionalHeaders}, From, S
             ETag
         end);
 
+handle_call({copy, Bucket, Key, AdditionalHeaders}, From, State) ->
+    genericRequest(From, State, put, Bucket, Key, [], AdditionalHeaders, <<>>, nil,  fun parseCopy/2 );
+
 handle_call({ list, Bucket, Options }, From, State) ->
     Headers = lists:map( fun option_to_param/1, Options ),
     genericRequest(From, State, get, Bucket, "", Headers, [], <<>>, "",  fun parseBucketListXml/2 );
@@ -330,6 +333,8 @@ canonicalizedResource ( "", "" ) -> "/";
 canonicalizedResource ( Bucket, "" ) -> "/" ++ Bucket ++ "/";
 canonicalizedResource ( Bucket, Path ) -> "/" ++ Bucket ++ "/" ++ Path.
 
+stringToSign ( Verb, nil, Date, Bucket, Path, OriginalHeaders ) ->
+  stringToSign ( Verb, "", Date, Bucket, Path, OriginalHeaders );
 stringToSign ( Verb, ContentType, Date, Bucket, Path, OriginalHeaders ) ->
     Parts = [ Verb, proplists:get_value("Content-MD5", OriginalHeaders, ""), ContentType, Date, canonicalizedAmzHeaders(OriginalHeaders)],
     s3util:string_join( Parts, "\n") ++ canonicalizedResource(Bucket, Path).
@@ -359,9 +364,11 @@ buildContentHeaders( Contents, ContentType, AdditionalHeaders ) ->
      {"Content-Type", ContentType}
      | AdditionalHeaders].
 
+
+buildOptions(<<>>, nil,SSL)->
+    [{is_ssl, SSL}, {ssl_options, []}];
 buildOptions(<<>>, _ContentType, SSL)->
      [{stream_to, self()},{is_ssl, SSL}, {ssl_options, []}];
-
 buildOptions(Content, ContentType,SSL)->
     [{content_length, content_length(Content)},
     {content_type, ContentType},
@@ -403,6 +410,10 @@ genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Tim
                 {ibrowse_req_id,RequestId} ->
                     Pendings = gb_trees:insert(RequestId,#request{pid=From, to_file=Fd, started=now(), callback=Callback},P),
                     {noreply, State#state{pending=Pendings}};
+                {ok, "200", H, B}->
+                   {reply, {ok, H, Callback(B, H)}, State};
+                {ok, Code, _H, _B} ->
+                   {reply, {error, return_code, Code}, State};
                 {error,E} when E =:= retry_later orelse E =:= conn_failed ->
                     {reply, retry, State};
                 {error, E} ->
@@ -419,6 +430,13 @@ get_fd(FileName, Opts)->
 	    {error,  Reason}
 	end.
 
+parseCopy(XmlDoc, _H)->
+  {Xml, _Rest} = xmerl_scan:string(XmlDoc),
+  [ EtagS|_] = xmerl_xpath:string("/CopyObjectResult/ETag/text()", Xml),
+  [LastModified|_] = xmerl_xpath:string("/CopyObjectResult/LastModified/text()", Xml),
+   "\"" ++ Etag = EtagS#xmlText.value,
+  [{etag,Etag}, {lastmodified,LastModified#xmlText.value }].
+  
 parseBucketListXml (XmlDoc, _H) ->
     {Xml, _Rest} = xmerl_scan:string(XmlDoc),
     ContentNodes = xmerl_xpath:string("/ListBucketResult/Contents", Xml),
