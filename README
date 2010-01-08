@@ -38,9 +38,8 @@ Requirements
     
 = BUILDING =
 
-Type rake.
-The first time, you will need to edit erlang_config.rb.
-Re-run rake
+./rebar compile
+./rebar install
 
 = Configuration = 
 
