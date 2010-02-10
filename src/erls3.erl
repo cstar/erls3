@@ -1,11 +1,11 @@
 %%%-------------------------------------------------------------------
-%%% File    : s3.erl
+%%% File    : erls3.erl
 %%% Author  : Andrew Birkett <andy@nobugs.org>
 %%% Description : 
 %%%
 %%% Created : 14 Nov 2007 by Andrew Birkett <andy@nobugs.org>
 %%%-------------------------------------------------------------------
--module(s3).
+-module(erls3).
 
 -behaviour(application).
 -define(TIMEOUT, 15000).
@@ -38,7 +38,7 @@ start()->
     application:start(crypto),
     application:start(xmerl),
     application:start(ibrowse),
-    application:start(s3).
+    application:start(erls3).
     
 
 start(_Type, _StartArgs) ->
@@ -62,16 +62,16 @@ start(_Type, _StartArgs) ->
             443;
         true -> 80
     end,
-    ibrowse:set_max_sessions("s3.amazonaws.com", Port,100),
-    ibrowse:set_max_pipeline_size("s3.amazonaws.com", Port,20),
+    ibrowse:set_max_sessions("erls3.amazonaws.com", Port,100),
+    ibrowse:set_max_pipeline_size("erls3.amazonaws.com", Port,20),
     if ID == error orelse Secret == error ->
             {error, "AWS credentials not set. Pass as application parameters or as env variables."};
         true ->
-            s3sup:start_link([ID, Secret, SSL, Timeout, UseMemcached], N)
+            erls3sup:start_link([ID, Secret, SSL, Timeout, UseMemcached], N)
 	end.
 	
 shutdown() ->
-    application:stop(s3).
+    application:stop(erls3).
     
 
 link_to(Bucket, Key, Expires)->
@@ -148,7 +148,7 @@ list_objects (Bucket) ->
 %      [<<"starts-with">>, <<"$Content-Type">>, <<"image/">>],
 %      [<<"starts-with">>, <<"$key">>, <<"/user/cstar">>]
 %  ]}]}.
-% s3:policy will return : (helpful for building the form)
+% erls3:policy will return : (helpful for building the form)
 % [{"AWSAccessKeyId",<<"ACCESS">>},
 % {"Policy",
 %  <<"eyJleHBpcmF0aW9uIjoiMjAwNy0wNC0wMVQxMjowMDowMC4wMDBaIiwiY29uZGl0aW9ucyI6W3siYWNsIjoicHVibGljLXJlYWQi"...>>},
@@ -160,7 +160,7 @@ list_objects (Bucket) ->
 % {"acl",<<"public-read">>},
 % {"file",<<>>}]
 policy(Policy)->
-    Pid = s3sup:get_random_pid(),
+    Pid = erls3sup:get_random_pid(),
     gen_server:call(Pid, {policy,Policy}).  
     
 stop(_State) ->
@@ -171,15 +171,15 @@ call(M)->
     call(M, 0).
 
 call(M, Retries)->
-    Pid = s3sup:get_random_pid(),
+    Pid = erls3sup:get_random_pid(),
     case gen_server:call(Pid, M, infinity) of
       retry -> 
           Sleep = random:uniform(math:pow(4, Retries)*10),
-          s3util:sleep(Sleep),
+          erls3util:sleep(Sleep),
           call(M, Retries + 1);
      {timeout, _} ->
          Sleep = random:uniform(math:pow(4, Retries)*10),
-          s3util:sleep(Sleep),
+          erls3util:sleep(Sleep),
           call(M, Retries + 1);
       R -> R
   end.  
@@ -202,7 +202,7 @@ param(Name, Default)->
 		{ok, Value} -> Value;
 		_-> Default
 	end.
-%s3:get_objects("drupal.ohmforce.com", []).
+%erls3:get_objects("drupal.ohmforce.com", []).
 
 %% Lifted from http://lukego.livejournal.com/6753.html	
 pmap(_F,[], _Bucket) -> [];

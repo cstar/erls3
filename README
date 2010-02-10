@@ -12,7 +12,7 @@ What is it?
 Amazon's S3 storage service is a "pay as you go" service for storing
 files.  You can use it to serve web content, backup your files, etc.
 
-This s3erl library provides easy access to S3 for erlang applications.
+This erls3erl library provides easy access to S3 for erlang applications.
 
 More info at: http://www.amazon.com/b?node=16427261
 

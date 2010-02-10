@@ -1,11 +1,11 @@
--module(s3util).
+-module(erls3util).
 -export([mstore/4, mfetch/2, mdelete/2, collapse/1, string_join/2, join/1,filter_keyset/2, string_value/1, unix_time/1, url_encode/1, sleep/1]).
 -include_lib("xmerl/include/xmerl.hrl").
 
 
 %% Cache functions
 key(Bucket, Key)->
-    "s3/"++Bucket++"/"++Key.
+    "erls3/"++Bucket++"/"++Key.
 mstore(Bucket, Key, Body, Headers)->
     NHeaders = lists:map(fun({K, V})->
         {K, list_to_binary(V)}

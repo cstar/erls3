@@ -1,11 +1,11 @@
 %%%-------------------------------------------------------------------
-%%% File    : s3.erl
+%%% File    : erls3.erl
 %%% Author  : Andrew Birkett <andy@nobugs.org>
 %%% Description : 
 %%%
 %%% Created : 14 Nov 2007 by Andrew Birkett <andy@nobugs.org>
 %%%-------------------------------------------------------------------
--module(s3server).
+-module(erls3server).
 
 -behaviour(gen_server).
 -define(TIMEOUT, 40000).
@@ -24,7 +24,7 @@
 	 
 -include_lib("kernel/include/file.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
--include("../include/s3.hrl").
+-include("../include/erls3.hrl").
 
 -record(state, {ssl,access_key, secret_key, pending, cache=false, timeout=?TIMEOUT}).
 -record(request, {pid, callback, started, code, to_file=false, headers=[], content=[]}).
@@ -78,27 +78,27 @@ handle_call({delete, Bucket }, From, State) ->
 handle_call({put, Bucket, Key, Content, ContentType, AdditionalHeaders}, From, #state{cache = true}=State) ->
     genericRequest(From, State, put, Bucket, Key, [], AdditionalHeaders, Content, ContentType, fun(_X, Headers) -> 
             {value,{"ETag",ETag}} = lists:keysearch( "ETag", 1, Headers ),
-            s3util:mdelete(Bucket, Key),
+            erls3util:mdelete(Bucket, Key),
             ETag
         end);
     
 handle_call({ get, Bucket, Key}, From, #state{cache = true} = State)->
-    case s3util:mfetch(Bucket, Key) of
+    case erls3util:mfetch(Bucket, Key) of
          undefined  ->
             genericRequest(From, State, get,  Bucket, Key, [], [], <<>>, "", 
             fun(B, H) -> 
-                s3util:mstore(Bucket, Key, B, H),
+                erls3util:mstore(Bucket, Key, B, H),
                 {B,H}
              end);
         Value ->
             {reply, {ok, Value}, State}
     end;
 handle_call({ get_with_key, Bucket, Key}, From, #state{cache = true} = State)->
-    case s3util:mfetch(Bucket, Key) of
+    case erls3util:mfetch(Bucket, Key) of
         undefined ->
             genericRequest(From, State, get,  Bucket, Key, [], [], <<>>, "", 
             fun(B, H) -> 
-                s3util:mstore(Bucket, Key, B, H),
+                erls3util:mstore(Bucket, Key, B, H),
                 {Key, B,H}
             end);
         {B,H} ->
@@ -107,7 +107,7 @@ handle_call({ get_with_key, Bucket, Key}, From, #state{cache = true} = State)->
 handle_call({delete, Bucket, Key }, From, #state{cache = true} =State) ->
     genericRequest(From, State, delete, Bucket, Key, [], [], <<>>, "", 
         fun(_,_) -> 
-            s3util:mdelete(Bucket, Key),
+            erls3util:mdelete(Bucket, Key),
             ok 
         end);
 
@@ -169,10 +169,10 @@ handle_call({delete, Bucket, Key }, From, State) ->
     genericRequest(From, State, delete, Bucket, Key, [], [], <<>>, "", fun(_,_) -> ok end);
 
 handle_call({link_to, Bucket, Key, Expires}, _From, #state{access_key=Access, secret_key=Secret, ssl=SSL}=State)->
-    Exp = integer_to_list(s3util:unix_time(Expires)),
+    Exp = integer_to_list(erls3util:unix_time(Expires)),
     QueryParams = [{"AWSAccessKeyId", Access},{"Expires", Exp}],
     Url = buildUrl(Bucket,Key,QueryParams, SSL),
-    Signature = s3util:url_encode(
+    Signature = erls3util:url_encode(
                 sign( Secret,
 		        stringToSign( "GET", "", 
 				    Exp, Bucket, Key, "" ))),
@@ -324,10 +324,10 @@ isAmzHeader( Header ) -> lists:prefix("x-amz-", Header).
 canonicalizedAmzHeaders( AllHeaders ) ->
     AmzHeaders = [ {string:to_lower(K),V} || {K,V} <- AllHeaders, isAmzHeader(K) ],
     Strings = lists:map( 
-		fun s3util:join/1, 
-		s3util:collapse( 
+		fun erls3util:join/1, 
+		erls3util:collapse( 
 		  lists:keysort(1, AmzHeaders) ) ),
-    s3util:string_join( lists:map( fun (S) -> S ++ "\n" end, Strings), "").
+    erls3util:string_join( lists:map( fun (S) -> S ++ "\n" end, Strings), "").
     
 canonicalizedResource ( "", "" ) -> "/";
 canonicalizedResource ( Bucket, "" ) -> "/" ++ Bucket ++ "/";
@@ -337,7 +337,7 @@ stringToSign ( Verb, nil, Date, Bucket, Path, OriginalHeaders ) ->
   stringToSign ( Verb, "", Date, Bucket, Path, OriginalHeaders );
 stringToSign ( Verb, ContentType, Date, Bucket, Path, OriginalHeaders ) ->
     Parts = [ Verb, proplists:get_value("Content-MD5", OriginalHeaders, ""), ContentType, Date, canonicalizedAmzHeaders(OriginalHeaders)],
-    s3util:string_join( Parts, "\n") ++ canonicalizedResource(Bucket, Path).
+    erls3util:string_join( Parts, "\n") ++ canonicalizedResource(Bucket, Path).
     
 sign (Key,Data) ->
     binary_to_list( base64:encode( crypto:sha_mac(Key,Data) ) ).
@@ -345,13 +345,13 @@ sign (Key,Data) ->
 queryParams( [] ) -> "";
 queryParams( L ) -> 
     Stringify = fun ({K,V}) -> K ++ "=" ++ V end,
-    "?" ++ s3util:string_join( lists:sort(lists:map( Stringify, L )), "&" ).
+    "?" ++ erls3util:string_join( lists:sort(lists:map( Stringify, L )), "&" ).
     
 buildUrl(Bucket,Path,QueryParams, false) -> 
-    "http://s3.amazonaws.com" ++ canonicalizedResource(Bucket,Path) ++ queryParams(QueryParams);
+    "http://erls3.amazonaws.com" ++ canonicalizedResource(Bucket,Path) ++ queryParams(QueryParams);
 
 buildUrl(Bucket,Path,QueryParams, true) -> 
-    "https://s3.amazonaws.com"++ canonicalizedResource(Bucket,Path) ++ queryParams(QueryParams).
+    "https://erls3.amazonaws.com"++ canonicalizedResource(Bucket,Path) ++ queryParams(QueryParams).
 
 buildContentHeaders( <<>>, _ContentType, AdditionalHeaders ) -> AdditionalHeaders;
 buildContentHeaders( {_F, read} = C, ContentType, AdditionalHeaders ) -> 
@@ -397,7 +397,7 @@ genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Tim
 				    Date, Bucket, Path, OriginalHeaders )),
     
     Headers = [ {"Authorization","AWS " ++ AKI ++ ":" ++ Signature },
-		        {"Host", "s3.amazonaws.com" },
+		        {"Host", "erls3.amazonaws.com" },
 		        {"Date", Date } 
 	            | OriginalHeaders ],
     Options = buildOptions(Contents, ContentType, SSL), 
@@ -443,7 +443,7 @@ parseBucketListXml (XmlDoc, _H) ->
 
     GetObjectAttribute = fun (Node,Attribute) -> 
 		      [Child] = xmerl_xpath:string( Attribute, Node ),
-		      {Attribute, s3util:string_value( Child )}
+		      {Attribute, erls3util:string_value( Child )}
 	      end,
 
     NodeToRecord = fun (Node) ->

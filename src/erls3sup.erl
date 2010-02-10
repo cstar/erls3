@@ -17,7 +17,7 @@
 %% 
 %% @end
 %%%-------------------------------------------------------------------
--module(s3sup).
+-module(erls3sup).
 -author("Eric Cestari <ecestari@mac.com> [http://www.cestari.info]").
 %% API
 -export([start_link/2,
@@ -37,11 +37,11 @@ init([Params, N]) ->
 	  lists:map(
 	    fun(I) ->
 		    {I,
-		     {s3server, start_link, [Params]},
+		     {erls3server, start_link, [Params]},
 		     transient,
 		     brutal_kill,
 		     worker,
-		     [s3server]}
+		     [erls3server]}
 	    end, lists:seq(1, N))}}.
 
 get_pids() ->
