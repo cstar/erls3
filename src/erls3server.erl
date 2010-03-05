@@ -17,7 +17,7 @@
 	stop/0
 	]).
 
-
+-define(DEBUG(T, P), io:format(T, P)).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, 
 	 terminate/2, code_change/3]).
@@ -215,7 +215,7 @@ handle_cast(_Msg, State) ->
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
 handle_info({ibrowse_async_headers,RequestId,Code,Headers },State = #state{pending=P}) ->
-    %%?DEBUG("******* Response :  ~p~n", [Response]),
+    %?DEBUG("******* Response :  ~p~n", [Response]),
 	case gb_trees:lookup(RequestId,P) of
 		{value,#request{pid = Pid }=R} -> 
 		    {ICode, []} = string:to_integer(Code),
@@ -348,10 +348,10 @@ queryParams( L ) ->
     "?" ++ erls3util:string_join( lists:sort(lists:map( Stringify, L )), "&" ).
     
 buildUrl(Bucket,Path,QueryParams, false) -> 
-    "http://erls3.amazonaws.com" ++ canonicalizedResource(Bucket,Path) ++ queryParams(QueryParams);
+    "http://s3.amazonaws.com" ++ canonicalizedResource(Bucket,Path) ++ queryParams(QueryParams);
 
 buildUrl(Bucket,Path,QueryParams, true) -> 
-    "https://erls3.amazonaws.com"++ canonicalizedResource(Bucket,Path) ++ queryParams(QueryParams).
+    "https://s3.amazonaws.com"++ canonicalizedResource(Bucket,Path) ++ queryParams(QueryParams).
 
 buildContentHeaders( <<>>, _ContentType, AdditionalHeaders ) -> AdditionalHeaders;
 buildContentHeaders( {_F, read} = C, ContentType, AdditionalHeaders ) -> 
@@ -397,7 +397,7 @@ genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Tim
 				    Date, Bucket, Path, OriginalHeaders )),
     
     Headers = [ {"Authorization","AWS " ++ AKI ++ ":" ++ Signature },
-		        {"Host", "erls3.amazonaws.com" },
+		        {"Host", "s3.amazonaws.com" },
 		        {"Date", Date } 
 	            | OriginalHeaders ],
     Options = buildOptions(Contents, ContentType, SSL), 
