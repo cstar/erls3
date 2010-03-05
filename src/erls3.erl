@@ -23,7 +23,7 @@
       read_term/2, write_term/3,
 	  list_buckets/0, create_bucket/1, 
 	  delete_bucket/1, link_to/3, 
-	  head/2, policy/1, get_objects/2,
+	  head/2, policy/1, get_objects/2, get_objects/3,
 	  list_objects/2, list_objects/1, 
 	  write_object/4, write_object/5, 
 	  read_object/2, read_object/3, 
@@ -123,13 +123,16 @@ delete_object (Bucket, Key) ->
     
 % Gets objects in // from S3.
 %% option example: [{delimiter, "/"},{maxkeys,10},{prefix,"/foo"}]
-get_object({object_info, {"Key", Key}, _, _, _}, Bucket)->
+get_object({object_info, {"Key", Key}, _, _, _}, Bucket, Fun)->
   {ok, Obj} = call({get_with_key, Bucket, Key}),
-  Obj.
-    
+  Fun(Obj).
+
 get_objects(Bucket, Options)->
+  get_objects(Bucket, Options, fun(Obj)-> Obj end).
+
+get_objects(Bucket, Options, Fun)->
     {ok, Objects} = list_objects(Bucket, Options),
-    pmap(fun get_object/2,Objects, Bucket).
+    pmap(fun get_object/3,Objects, Bucket, Fun).
     
 %% option example: [{delimiter, "/"},{maxkeys,10},{prefix,"/foo"}]
 list_objects (Bucket, Options ) -> 
@@ -174,11 +177,11 @@ call(M, Retries)->
     Pid = erls3sup:get_random_pid(),
     case gen_server:call(Pid, M, infinity) of
       retry -> 
-          Sleep = random:uniform(math:pow(4, Retries)*10),
+          Sleep = random:uniform(trunc(math:pow(4, Retries)*10)),
           erls3util:sleep(Sleep),
-          call(M, Retries + 1);
+          call(M, Retries + 1);   
      {timeout, _} ->
-         Sleep = random:uniform(math:pow(4, Retries)*10),
+         Sleep = random:uniform(trunc(math:pow(4, Retries)*10)),
           erls3util:sleep(Sleep),
           call(M, Retries + 1);
       R -> R
@@ -205,17 +208,17 @@ param(Name, Default)->
 %erls3:get_objects("drupal.ohmforce.com", []).
 
 %% Lifted from http://lukego.livejournal.com/6753.html	
-pmap(_F,[], _Bucket) -> [];
-pmap(F,List, Bucket) ->
+pmap(_F,[], _Bucket, _Fun) -> [];
+pmap(F,List, Bucket, Fun) ->
     Pid = self(),
     spawn(fun()->
-        [spawn_worker(Pid,F,E, Bucket) || E <- List] 
+        [spawn_worker(Pid,F,E, Bucket, Fun) || E <- List] 
     end),
         lists:map(fun(_N)->
             wait_result()
     end, lists:seq(1, length(List))).
-spawn_worker(Parent, F, E, Bucket) ->
-    spawn_link(fun() -> Parent ! {self(), F(E, Bucket)} end).
+spawn_worker(Parent, F, E, Bucket, Fun) ->
+    spawn_link(fun() -> Parent ! {self(), F(E, Bucket, Fun)} end).
 
 wait_result() ->
     receive
