@@ -132,8 +132,10 @@ get_objects(Bucket, Options, Fun)->
     pmap(fun get_object/3,Objects, Bucket, Fun).
       
 get_object({object_info, {"Key", Key}, _, _, _}, Bucket, Fun)->
-  {ok, Obj} = call({get_with_key, Bucket, Key}),
-  Fun(Bucket, Obj).   
+  case call({get_with_key, Bucket, Key}) of
+    {ok, Obj} -> Fun(Bucket, Obj);
+    Error -> Error
+  end.
 %% option example: [{delimiter, "/"},{maxkeys,10},{prefix,"/foo"}]
 list_objects (Bucket, Options ) -> 
     call({list, Bucket, Options }).
@@ -217,10 +219,10 @@ pmap(F,List, Bucket, Fun) ->
             wait_result()
     end, lists:seq(1, length(List))).
 spawn_worker(Parent, F, E, Bucket, Fun) ->
-    spawn_link(fun() -> Parent ! {self(), F(E, Bucket, Fun)} end).
+    spawn_link(fun() -> Parent ! {pmap, self(), F(E, Bucket, Fun)} end).
 
 wait_result() ->
     receive
         {'EXIT', Reason} -> exit(Reason);
-	    {_Pid,Result} -> Result
+	    {pmap, _Pid,Result} -> Result
     end.
