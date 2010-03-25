@@ -124,7 +124,7 @@ delete_object (Bucket, Key) ->
 % Gets objects in // from S3.
 %% option example: [{delimiter, "/"},{maxkeys,10},{prefix,"/foo"}]
 get_objects(Bucket, Options)->
-  get_objects(Bucket, Options, fun(Bucket, Obj)-> Obj end).
+  get_objects(Bucket, Options, fun(_B, Obj)-> Obj end).
 
 % Fun = fun(Bucket, {Key, Content, Headers})
 get_objects(Bucket, Options, Fun)->
