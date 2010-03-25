@@ -123,17 +123,17 @@ delete_object (Bucket, Key) ->
     
 % Gets objects in // from S3.
 %% option example: [{delimiter, "/"},{maxkeys,10},{prefix,"/foo"}]
-get_object({object_info, {"Key", Key}, _, _, _}, Bucket, Fun)->
-  {ok, Obj} = call({get_with_key, Bucket, Key}),
-  Fun(Obj).
-
 get_objects(Bucket, Options)->
-  get_objects(Bucket, Options, fun(Obj)-> Obj end).
+  get_objects(Bucket, Options, fun(Bucket, Obj)-> Obj end).
 
+% Fun = fun(Bucket, {Key, Content, Headers})
 get_objects(Bucket, Options, Fun)->
     {ok, Objects} = list_objects(Bucket, Options),
     pmap(fun get_object/3,Objects, Bucket, Fun).
-    
+      
+get_object({object_info, {"Key", Key}, _, _, _}, Bucket, Fun)->
+  {ok, Obj} = call({get_with_key, Bucket, Key}),
+  Fun(Bucket, Obj).   
 %% option example: [{delimiter, "/"},{maxkeys,10},{prefix,"/foo"}]
 list_objects (Bucket, Options ) -> 
     call({list, Bucket, Options }).
@@ -205,7 +205,6 @@ param(Name, Default)->
 		{ok, Value} -> Value;
 		_-> Default
 	end.
-%erls3:get_objects("drupal.ohmforce.com", []).
 
 %% Lifted from http://lukego.livejournal.com/6753.html	
 pmap(_F,[], _Bucket, _Fun) -> [];
