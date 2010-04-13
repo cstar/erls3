@@ -234,11 +234,11 @@ handle_info({ibrowse_async_response,_RequestId,{chunk_start, _N} },State) ->
 handle_info({ibrowse_async_response,_RequestId,chunk_end },State) ->
     {noreply, State};	
     
-handle_info({ibrowse_async_response,RequestId,Body },State = #state{pending=P}) when is_list(Body)->
+handle_info({ibrowse_async_response,RequestId,Body },State = #state{pending=P}) when is_binary(Body)->
     %?DEBUG("******* Response :  ~p~n", [Response]),
 	case gb_trees:lookup(RequestId,P) of
 		{value,#request{content=Content, to_file=false}=R} -> 
-			{noreply,State#state{pending=gb_trees:enter(RequestId,R#request{content=Content ++ Body}, P)}};
+			{noreply,State#state{pending=gb_trees:enter(RequestId,R#request{content=[Content,Body]}, P)}};
 		{value,#request{to_file=Fd}} ->
 		    case file:write(Fd,Body) of
 	            ok ->
@@ -311,9 +311,9 @@ handle_http_response(#request{pid=From, code="404"})->
     gen_server:reply(From, {error, not_found, "Not found"});
 handle_http_response(#request{pid=From, callback=CallBack, code=Code, headers=Headers, content=Content})
                     when Code =:= "200" orelse Code =:= "204"->
-    gen_server:reply(From,{ok, CallBack(Content, Headers)});
+    gen_server:reply(From,{ok, CallBack(iolist_to_binary(Content), Headers)});
 handle_http_response(#request{pid=From, content=Content})->
-    {Xml, _Rest} = xmerl_scan:string(Content),
+    {Xml, _Rest} = xmerl_scan:string(iolist_to_binary(Content)),
     [#xmlText{value=ErrorCode}]    = xmerl_xpath:string("//Error/Code/text()", Xml),
     [#xmlText{value=ErrorMessage}] = xmerl_xpath:string("//Error/Message/text()", Xml),
     gen_server:reply(From,{error, ErrorCode, ErrorMessage}).
@@ -366,12 +366,13 @@ buildContentHeaders( Contents, ContentType, AdditionalHeaders ) ->
 
 
 buildOptions(<<>>, nil,SSL)->
-    [{is_ssl, SSL}, {ssl_options, []}];
+    [{is_ssl, SSL}, {ssl_options, []}, {response_format, binary}];
 buildOptions(<<>>, _ContentType, SSL)->
-     [{stream_to, self()},{is_ssl, SSL}, {ssl_options, []}];
+     [{stream_to, self()},{is_ssl, SSL}, 
+      {ssl_options, []},{response_format, binary}];
 buildOptions(Content, ContentType,SSL)->
     [{content_length, content_length(Content)},
-    {content_type, ContentType},
+    {content_type, ContentType}, {response_format, binary},
     {is_ssl, SSL},{ssl_options, []},{stream_to, self()}].
 
 content_length({F, read})->
@@ -401,7 +402,7 @@ genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Tim
 		        {"Date", Date } 
 	            | OriginalHeaders ],
     Options = buildOptions(Contents, ContentType, SSL), 
-    %io:format("Options : ~p~nHeaders : ~p~nContents : ~p~n", [Options, Headers, Contents]),
+    io:format("Options : ~p~nHeaders : ~p~nContents : ~p~n", [Options, Headers, Contents]),
     case get_fd(ToFile, [write, delayed_write, raw]) of
         {error, R} ->
             {reply, {error, R, "Error Occured"}, State};

@@ -101,7 +101,7 @@ write_object (Bucket, Key, Data, ContentType, Metadata) ->
 
 read_term(Bucket, Key)->
     case read_object (Bucket, Key) of
-        {ok, {B, H}} -> {ok, {binary_to_term(list_to_binary(B)), H}};
+        {ok, {B, H}} -> {ok, {binary_to_term(B), H}};
         E -> E
     end.
 
@@ -180,11 +180,11 @@ call(M, Retries)->
     case gen_server:call(Pid, M, infinity) of
       retry -> 
           Sleep = random:uniform(trunc(math:pow(4, Retries)*10)),
-          erls3util:sleep(Sleep),
+          timer:sleep(Sleep),
           call(M, Retries + 1);   
      {timeout, _} ->
          Sleep = random:uniform(trunc(math:pow(4, Retries)*10)),
-          erls3util:sleep(Sleep),
+          timer:sleep(Sleep),
           call(M, Retries + 1);
       R -> R
   end.  

@@ -1,5 +1,5 @@
 -module(erls3util).
--export([mstore/4, mfetch/2, mdelete/2, collapse/1, string_join/2, join/1,filter_keyset/2, string_value/1, unix_time/1, url_encode/1, sleep/1]).
+-export([mstore/4, mfetch/2, mdelete/2, collapse/1, string_join/2, join/1,filter_keyset/2, string_value/1, unix_time/1, url_encode/1]).
 -include_lib("xmerl/include/xmerl.hrl").
 
 
@@ -116,9 +116,3 @@ old_integer_to_hex(I) when I<16 ->
 old_integer_to_hex(I) when I>=16 ->
     N = trunc(I/16),
     old_integer_to_hex(N) ++ old_integer_to_hex(I rem 16).
-    
-sleep(T) ->
-    receive
-    after T ->
-       true
-    end.
