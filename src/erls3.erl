@@ -19,6 +19,8 @@
 	 stop/1
 	 ]).
 %% API
+
+-compile(export_all).
 -export([
       read_term/2, write_term/3,
 	  list_buckets/0, create_bucket/1, 
@@ -33,7 +35,11 @@
 	  set_versioning/2,
 	  get_versioning/1,
 	  copy/4 ]).
-	
+
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
 
 -include_lib("xmerl/include/xmerl.hrl").
 
@@ -96,7 +102,8 @@ set_versioning(Bucket, Enable)->
   <Status>">>,Switch ,<<"</Status> 
 </VersioningConfiguration>">>]),
   call({put, Bucket, "?versioning", Body, fun(B, Header)->
-    error_logger:info_report([{body, B}, {header, Header}])
+    %error_logger:info_report([{body, B}, {header, Header}])
+    ok
   end}).
 get_versioning(Bucket)->
   case read_object(Bucket, "?versioning") of 
@@ -266,3 +273,64 @@ wait_result() ->
         {'EXIT', Reason} -> exit(Reason);
 	    {pmap, _Pid,Result} -> Result
     end.
+    
+-ifdef(EUNIT).
+
+erls3_test()->
+  Name = test_setup(),
+  {ok, Buckets} = list_buckets(),
+  ?assertEqual(true, lists:member(Name, Buckets)),
+  Term = {toto, [Name, <<"term">>]},
+  write_term(Name, "test", Term),
+  ?assertMatch({ok, {Term, _H}}, read_term(Name, "test")),
+
+  %% Etag
+  {ok, Etag} = write_object(Name, "key1", <<"data">>, "text/plain", [{"x-amz-meta-test-value", "sacha"}]),
+  ?assertMatch({ok,not_modified}, read_object(Name, "key1", Etag)),
+  
+  {ok, {_B, H}} = read_object(Name, "key1"),
+  ?assertEqual(true,lists:member({"x-amz-meta-test-value", "sacha"}, H)),
+  
+  %Signed link :
+  ?assertMatch({ok, "200", _H, "data"}, 
+      ibrowse:send_req(link_to(Name, "key1", 1000), [], get)),
+  
+  %% File
+  file:write_file("/tmp/input", <<"foo">>),
+  write_from_file(Name, "bar", "/tmp/input", "text/plain", []),
+  ?assertMatch({ok, {<<"foo">>, _H}}, read_object(Name, "bar")),
+  
+  read_to_file(Name, "bar", "/tmp/result"),
+  ?assertEqual({ok,<<"foo">>}, file:read_file("/tmp/result")),
+  
+  %copy
+  copy(Name, "bar", Name, "foo"),
+  ?assertMatch({ok, {<<"foo">>, _H}}, read_object(Name, "foo")),
+  
+
+  test_teardown(Name).
+
+
+versioning_test()->
+  Name = test_setup(),
+  set_versioning(Name, false),
+  ?assertEqual({ok, disabled}, get_versioning(Name)),
+  set_versioning(Name, true),
+  ?assertEqual({ok, enabled}, get_versioning(Name)),
+  test_teardown(Name).
+
+test_setup()->
+  erls3:start(),
+  Name = generate_bucket_name(),
+  {ok, ok} = erls3:create_bucket(Name),
+  Name.
+  
+generate_bucket_name()->
+  "erls3_test_" ++ lists:flatten(lists:foldl(fun(_X,AccIn) ->
+    [random:uniform(25) + 97|AccIn] end,
+    [], lists:seq(1,12))).
+    
+test_teardown(Name)->
+  erls3:delete_bucket(Name).
+  
+-endif.  
