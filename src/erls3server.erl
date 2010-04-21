@@ -17,7 +17,7 @@
 	stop/0
 	]).
 
--define(DEBUG(T, P), io:format(T, P)).
+-define(DEBUG(T, P), error_logger:info_msg(T, P)).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, 
 	 terminate/2, code_change/3]).
@@ -70,6 +70,9 @@ handle_call({listbuckets}, From, State) ->
 
 handle_call({ put, Bucket }, From, State) ->
     genericRequest(From, State, put, Bucket, "", [], [], <<>>, "", fun(_,_) -> ok end);
+
+handle_call({ put, Bucket, Key, Command,  Fun}, From, State)  when is_function(Fun) ->
+    genericRequest(From, State, put, Bucket, Key, [], [], Command, "", Fun);
 
 handle_call({delete, Bucket }, From, State) ->
     genericRequest(From, State, delete, Bucket, "", [], [],<<>>, "", fun(_,_) -> ok end);
@@ -402,7 +405,6 @@ genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Tim
 		        {"Date", Date } 
 	            | OriginalHeaders ],
     Options = buildOptions(Contents, ContentType, SSL), 
-    io:format("Options : ~p~nHeaders : ~p~nContents : ~p~n", [Options, Headers, Contents]),
     case get_fd(ToFile, [write, delayed_write, raw]) of
         {error, R} ->
             {reply, {error, R, "Error Occured"}, State};

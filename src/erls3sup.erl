@@ -1,11 +1,10 @@
 %%%-------------------------------------------------------------------
-%% @doc supervisor for gen_server to access SimpleDB
+%% @doc supervisor for gen_server to access S3
 %% 
 %% == Contents ==
 %%
 %% {@section Introduction}<br/>
 %% == Introduction ==
-%%  Amazon's SimpleDB is a web service to persist string based key/value pairs.
 %%  This library provides access to the web service using REST based interface.
 %%  Mostly lifted and adapted from ejabberd_odbc_sup code.
 %%  APIs:

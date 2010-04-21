@@ -30,8 +30,12 @@
 	  delete_object/2,
 	  write_from_file/5,
 	  read_to_file/3,
+	  set_versioning/2,
+	  get_versioning/1,
 	  copy/4 ]).
-	  
+	
+
+-include_lib("xmerl/include/xmerl.hrl").
 
 start()->
     application:start(sasl),
@@ -77,6 +81,42 @@ shutdown() ->
 link_to(Bucket, Key, Expires)->
     call({link_to, Bucket, Key, Expires} ).
 
+set_versioning(Bucket, Enable)->
+  Switch = case Enable of 
+    Ok when Ok =:= enabled 
+        orelse Ok =:= on 
+        orelse Ok =:= true ->
+      <<"Enabled">>;
+    Ko when Ko =:= disabled 
+        orelse Ko =:= off 
+        orelse Ko =:= false ->
+      <<"Suspended">>
+  end,
+  Body = iolist_to_binary([<<"<VersioningConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"> 
+  <Status>">>,Switch ,<<"</Status> 
+</VersioningConfiguration>">>]),
+  call({put, Bucket, "?versioning", Body, fun(B, Header)->
+    error_logger:info_report([{body, B}, {header, Header}])
+  end}).
+get_versioning(Bucket)->
+  case read_object(Bucket, "?versioning") of 
+    {ok, {Body, _Header}}->
+      {Xml, _Rest} = xmerl_scan:string(binary_to_list(Body)),
+      TextNodes  = xmerl_xpath:string("//VersioningConfiguration/Status/text()", Xml),
+      RawStatus = lists:map( fun (#xmlText{value=T}) -> T end, TextNodes),
+      Status = case RawStatus of 
+        ["Enabled"] ->
+          enabled;
+        [] ->
+          disabled;
+        ["Suspended"] ->
+          disabled
+      end,
+      {ok, Status};
+    Error ->
+      Error
+  end.
+  
 create_bucket (Name) -> 
     call({put, Name} ).
 delete_bucket (Name) -> 
