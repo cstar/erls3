@@ -315,8 +315,10 @@ handle_http_response(#request{pid=From, code="404"})->
 handle_http_response(#request{pid=From, callback=CallBack, code=Code, headers=Headers, content=Content})
                     when Code =:= "200" orelse Code =:= "204"->
     gen_server:reply(From,{ok, CallBack(iolist_to_binary(Content), Headers)});
+    
 handle_http_response(#request{pid=From, content=Content})->
-    {Xml, _Rest} = xmerl_scan:string(iolist_to_binary(Content)),
+    {Xml, _Rest} = xmerl_scan:string(
+            binary_to_list(iolist_to_binary(Content))),
     [#xmlText{value=ErrorCode}]    = xmerl_xpath:string("//Error/Code/text()", Xml),
     [#xmlText{value=ErrorMessage}] = xmerl_xpath:string("//Error/Message/text()", Xml),
     gen_server:reply(From,{error, ErrorCode, ErrorMessage}).
