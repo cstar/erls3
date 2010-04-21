@@ -434,14 +434,14 @@ get_fd(FileName, Opts)->
 	end.
 
 parseCopy(XmlDoc, _H)->
-  {Xml, _Rest} = xmerl_scan:string(XmlDoc),
+  {Xml, _Rest} = xmerl_scan:string(binary_to_list(XmlDoc)),
   [ EtagS|_] = xmerl_xpath:string("/CopyObjectResult/ETag/text()", Xml),
   [LastModified|_] = xmerl_xpath:string("/CopyObjectResult/LastModified/text()", Xml),
    "\"" ++ Etag = EtagS#xmlText.value,
   [{etag,Etag}, {lastmodified,LastModified#xmlText.value }].
   
 parseBucketListXml (XmlDoc, _H) ->
-    {Xml, _Rest} = xmerl_scan:string(XmlDoc),
+    {Xml, _Rest} = xmerl_scan:string(binary_to_list(XmlDoc)),
     ContentNodes = xmerl_xpath:string("/ListBucketResult/Contents", Xml),
 
     GetObjectAttribute = fun (Node,Attribute) -> 
@@ -460,7 +460,7 @@ parseBucketListXml (XmlDoc, _H) ->
 
 
 xmlToBuckets( Body, _H) ->
-    {Xml, _Rest} = xmerl_scan:string(Body),
+    {Xml, _Rest} = xmerl_scan:string(binary_to_list(Body)),
     TextNodes       = xmerl_xpath:string("//Bucket/Name/text()", Xml),
     lists:map( fun (#xmlText{value=T}) -> T end, TextNodes).
 
