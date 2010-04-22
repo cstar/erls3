@@ -1,8 +1,8 @@
 {application, erls3,
  [{description, "Access to S3 via REST interface"},
   {author, "Eric Cestari"},
-  {vsn, "v1.7"},
-  {modules, [ erls3, erls3server, erls3sup, erls3test, erls3util]},
+  {vsn, "v1.7.1"},
+  {modules, [ erls3, erls3server, erls3sup, erls3util]},
   {mod, {erls3,[]}},
   {registered, [erls3sup]},
   {applications, [kernel, stdlib, crypto, xmerl, ibrowse]}
