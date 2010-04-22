@@ -281,8 +281,10 @@ erls3_test()->
   {ok, Buckets} = list_buckets(),
   ?assertEqual(true, lists:member(Name, Buckets)),
   Term = {toto, [Name, <<"term">>]},
-  write_term(Name, "test", Term),
+  ?assertMatch({ok, _Etag}, write_term(Name, "test", Term)),
   ?assertMatch({ok, {Term, _H}}, read_term(Name, "test")),
+
+  ?assertEqual({error, not_found, "Not found"}, read_object(Name, "nonexistent")),
 
   %% Etag
   {ok, Etag} = write_object(Name, "key1", <<"data">>, "text/plain", [{"x-amz-meta-test-value", "sacha"}]),
@@ -300,6 +302,7 @@ erls3_test()->
   write_from_file(Name, "bar", "/tmp/input", "text/plain", []),
   ?assertMatch({ok, {<<"foo">>, _H}}, read_object(Name, "bar")),
   
+  
   read_to_file(Name, "bar", "/tmp/result"),
   ?assertEqual({ok,<<"foo">>}, file:read_file("/tmp/result")),
   
@@ -307,9 +310,18 @@ erls3_test()->
   copy(Name, "bar", Name, "foo"),
   ?assertMatch({ok, {<<"foo">>, _H}}, read_object(Name, "foo")),
   
-
   test_teardown(Name).
 
+%listing_test()->
+%  Name = test_setup(),
+%  lists:map(fun(Int)->
+%    ItemName = integer_to_list(Int),
+%    write_object(Name, ItemName, <<"data">>, "text/plain")
+%  end, lists:seq(1, 30)),
+%  
+%  ?assertEqual(30, lists:size(list_objects(Name,[]))),
+%  
+%  test_teardown(Name).
 
 versioning_test()->
   Name = test_setup(),
