@@ -101,7 +101,7 @@ set_versioning(Bucket, Enable)->
   Body = iolist_to_binary([<<"<VersioningConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"> 
   <Status>">>,Switch ,<<"</Status> 
 </VersioningConfiguration>">>]),
-  call({put, Bucket, "?versioning", Body, fun(B, Header)->
+  call({put, Bucket, "?versioning", Body, fun(_B, _Header)->
     %error_logger:info_report([{body, B}, {header, Header}])
     ok
   end}).
@@ -192,11 +192,11 @@ list_objects (Bucket) ->
 
 %  Sample policy file, 
 % See : http://docs.amazonwebservices.com/AmazonS3/latest/index.html?HTTPPOSTForms.html
-%{obj, [{"expiration", <<"2007-04-01T12:00:00.000Z">>}, 
+%{struct,  [{"expiration", <<"2007-04-01T12:00:00.000Z">>}, 
 %  {"conditions",  [
-%      {obj, [{"acl", <<"public-read">>}]}, 
-%      {obj,[{"bucket", <<"mybucket">>}]}, 
-%      {obj,[{"x-amz-meta-user", <<"cstar">>}]}, 
+%      {struct,  [{"acl", <<"public-read">>}]}, 
+%      {struct, [{"bucket", <<"mybucket">>}]}, 
+%      {struct, [{"x-amz-meta-user", <<"cstar">>}]}, 
 %      [<<"starts-with">>, <<"$Content-Type">>, <<"image/">>],
 %      [<<"starts-with">>, <<"$key">>, <<"/user/cstar">>]
 %  ]}]}.

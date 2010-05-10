@@ -181,19 +181,20 @@ handle_call({link_to, Bucket, Key, Expires}, _From, #state{access_key=Access, se
 				    Exp, Bucket, Key, "" ))),
     {reply, Url++"&Signature="++Signature, State};
     
-handle_call({policy, {obj, Attrs}=Policy}, _From, #state{access_key=Access, secret_key=Secret}=State)->
-  Conditions = proplists:get_value("conditions", Attrs, []),
+handle_call({policy, {struct, Attrs}=Policy}, _From, #state{access_key=Access, secret_key=Secret}=State)->
+  Conditions = proplists:get_value(conditions, Attrs, []),
   Attributes = 
     lists:foldl(fun([<<"content-length-range">>, Min,Max], Acc) when is_integer(Min) andalso is_integer(Max) ->
                         Acc; %% ignore not used for building the form 
                   ([_, DolName, V], Acc) ->
                     [$$|Name] = binary_to_list(DolName),
                     [{Name, V}|Acc];
-                   ({obj,[{Name, V}]}, Acc) ->
+                   ({struct,[{Name, V}]}, Acc) ->
                      [{Name, V}| Acc]
       end, [], Conditions),
+      %?DEBUG("Policy = ~p",[mochijson2:encode(Policy)]),
   Enc =base64:encode(
-        rfc4627:encode(Policy)),
+        list_to_binary(mochijson2:encode(Policy))),
   Signature = base64:encode(crypto:sha_mac(Secret, Enc)),
   {reply, [{"AWSAccessKeyId",list_to_binary(Access)},
            {"Policy", Enc}, 
@@ -238,7 +239,6 @@ handle_info({ibrowse_async_response,_RequestId,chunk_end },State) ->
     {noreply, State};	
     
 handle_info({ibrowse_async_response,RequestId,Body },State = #state{pending=P}) when is_binary(Body)->
-    %?DEBUG("******* Response :  ~p~n", [Response]),
 	case gb_trees:lookup(RequestId,P) of
 		{value,#request{content=Content, to_file=false}=R} -> 
 			{noreply,State#state{pending=gb_trees:enter(RequestId,R#request{content=[Content,Body]}, P)}};
@@ -401,12 +401,13 @@ genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Tim
     Signature = sign( SAK,
 		      stringToSign( MethodString,  ContentType, 
 				    Date, Bucket, Path, OriginalHeaders )),
-    
+   
     Headers = [ {"Authorization","AWS " ++ AKI ++ ":" ++ Signature },
 		        {"Host", "s3.amazonaws.com" },
 		        {"Date", Date } 
 	            | OriginalHeaders ],
     Options = buildOptions(Contents, ContentType, SSL), 
+    %error_logger:info_report([{method, Method}, {bucket, Bucket}, {key, Path}, {options, Options}]),
     case get_fd(ToFile, [write, delayed_write, raw]) of
         {error, R} ->
             {reply, {error, R, "Error Occured"}, State};
@@ -443,6 +444,7 @@ parseCopy(XmlDoc, _H)->
   [{etag,Etag}, {lastmodified,LastModified#xmlText.value }].
   
 parseBucketListXml (XmlDoc, _H) ->
+    %?DEBUG("******* Response :  ~p~n", [XmlDoc]),
     {Xml, _Rest} = xmerl_scan:string(binary_to_list(XmlDoc)),
     ContentNodes = xmerl_xpath:string("/ListBucketResult/Contents", Xml),
 
@@ -458,7 +460,8 @@ parseBucketListXml (XmlDoc, _H) ->
 			 etag =         GetObjectAttribute(Node,"ETag"),
 			 size =         GetObjectAttribute(Node,"Size")}
 		   end,
-    lists:map( NodeToRecord, ContentNodes ).
+    Prefixes       = xmerl_xpath:string("//CommonPrefixes/Prefix/text()", Xml),
+    {lists:map( NodeToRecord, ContentNodes ), lists:map(fun (#xmlText{value=T}) -> T end, Prefixes)}.
 
 
 xmlToBuckets( Body, _H) ->
