@@ -26,8 +26,8 @@
 -include_lib("xmerl/include/xmerl.hrl").
 -include("../include/erls3.hrl").
 
--record(state, {ssl,access_key, secret_key, pending, cache=false, timeout=?TIMEOUT}).
--record(request, {pid, callback, started, code, to_file=false, headers=[], content=[]}).
+-record(state, {ssl,access_key, secret_key, pending, timeout=?TIMEOUT}).
+-record(request, {pid, callback, started, opts, code, to_file=false, headers=[], content=[]}).
 %%====================================================================
 %% External functions
 %%====================================================================
@@ -36,8 +36,8 @@
 %% @spec start_link() -> {ok, pid()} | {error, Reason}
 %% @end
 %%--------------------------------------------------------------------
-start_link([Access, Secret, SSL, Timeout, UseMemcached]) ->
-    gen_server:start_link(?MODULE, [Access, Secret, SSL, Timeout, UseMemcached], []).
+start_link([Access, Secret, SSL, Timeout]) ->
+    gen_server:start_link(?MODULE, [Access, Secret, SSL, Timeout], []).
 
 %%--------------------------------------------------------------------
 %% @doc Stops the server.
@@ -47,10 +47,10 @@ start_link([Access, Secret, SSL, Timeout, UseMemcached]) ->
 stop() ->
     gen_server:cast(?MODULE, stop).
 
-init([Access, Secret, SSL, nil, UseMemcached]) ->
-    {ok, #state{ssl = SSL,access_key=Access, cache = UseMemcached, secret_key=Secret,pending=gb_trees:empty()}};
-init([Access, Secret, SSL, Timeout, UseMemcached]) ->
-    {ok, #state{ssl = SSL,access_key=Access, secret_key=Secret, cache = UseMemcached,timeout=Timeout, pending=gb_trees:empty()}}.
+init([Access, Secret, SSL, nil]) ->
+    {ok, #state{ssl = SSL,access_key=Access, secret_key=Secret,pending=gb_trees:empty()}};
+init([Access, Secret, SSL, Timeout]) ->
+    {ok, #state{ssl = SSL,access_key=Access, secret_key=Secret, timeout=Timeout, pending=gb_trees:empty()}}.
 
 
 
@@ -76,44 +76,6 @@ handle_call({ put, Bucket, Key, Command,  Fun}, From, State)  when is_function(F
 
 handle_call({delete, Bucket }, From, State) ->
     genericRequest(From, State, delete, Bucket, "", [], [],<<>>, "", fun(_,_) -> ok end);
-
-% Object operations with memcached
-handle_call({put, Bucket, Key, Content, ContentType, AdditionalHeaders}, From, #state{cache = true}=State) ->
-    genericRequest(From, State, put, Bucket, Key, [], AdditionalHeaders, Content, ContentType, fun(_X, Headers) -> 
-            {value,{"ETag",ETag}} = lists:keysearch( "ETag", 1, Headers ),
-            erls3util:mdelete(Bucket, Key),
-            ETag
-        end);
-    
-handle_call({ get, Bucket, Key}, From, #state{cache = true} = State)->
-    case erls3util:mfetch(Bucket, Key) of
-         undefined  ->
-            genericRequest(From, State, get,  Bucket, Key, [], [], <<>>, "", 
-            fun(B, H) -> 
-                erls3util:mstore(Bucket, Key, B, H),
-                {B,H}
-             end);
-        Value ->
-            {reply, {ok, Value}, State}
-    end;
-handle_call({ get_with_key, Bucket, Key}, From, #state{cache = true} = State)->
-    case erls3util:mfetch(Bucket, Key) of
-        undefined ->
-            genericRequest(From, State, get,  Bucket, Key, [], [], <<>>, "", 
-            fun(B, H) -> 
-                erls3util:mstore(Bucket, Key, B, H),
-                {Key, B,H}
-            end);
-        {B,H} ->
-            {reply,{ok, {Key, B,H}}, State}
-    end;        
-handle_call({delete, Bucket, Key }, From, #state{cache = true} =State) ->
-    genericRequest(From, State, delete, Bucket, Key, [], [], <<>>, "", 
-        fun(_,_) -> 
-            erls3util:mdelete(Bucket, Key),
-            ok 
-        end);
-
         
 %object operations no cache
 handle_call({put, Bucket, Key, Content, ContentType, AdditionalHeaders}, From, State) ->

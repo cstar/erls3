@@ -1,33 +1,6 @@
 -module(erls3util).
--export([mstore/4, mfetch/2, mdelete/2, collapse/1, string_join/2, join/1,filter_keyset/2, string_value/1, unix_time/1, url_encode/1]).
+-export([collapse/1, string_join/2, join/1,filter_keyset/2, string_value/1, unix_time/1, url_encode/1]).
 -include_lib("xmerl/include/xmerl.hrl").
-
-
-%% Cache functions
-key(Bucket, Key)->
-    "erls3/"++Bucket++"/"++Key.
-mstore(Bucket, Key, Body, Headers)->
-    NHeaders = lists:map(fun({K, V})->
-        {K, list_to_binary(V)}
-    end, Headers),
-    JS = {obj, [{"headers", {obj, NHeaders}}, {"body", list_to_binary(Body)}]},
-    merle:set(key(Bucket, Key), rfc4627:encode(JS)).
-    
-mfetch(Bucket, Key)->
-    case merle:getkey(key(Bucket, Key)) of
-        undefined -> undefined;
-        Val ->
-            {ok, {obj, Attrs}, _} = rfc4627:decode(Val),
-            B = proplists:get_value("body", Attrs),
-            {obj, H} = proplists:get_value("headers", Attrs),
-            NHeaders = lists:map(fun({K, V})->
-                    {K, binary_to_list(V)}
-                end, H),
-            {binary_to_list(B), NHeaders}
-    end.
-mdelete(Bucket, Key)->
-    merle:delete(key(Bucket, Key)).
-    
     
 %% Collapse equal keys into one list
 consume ({K,V}, [{K,L}|T]) -> [{K,[V|L]}|T];
@@ -62,7 +35,6 @@ join ({Key,Values}) ->
 %%join_two_test () -> ?assertMatch( "key:one,two", join({"key",["one","two"]} ) ).
 
 filter_keyset (L,KeySet) -> [ {K,V} || {K,V} <- L, lists:member(K,KeySet) ].
-     
 
 % All the text nodes in an xml doc
 string_value( #xmlDocument{ content=Content } ) -> lists:flatten(lists:map( fun string_value/1, Content ));
