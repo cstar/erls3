@@ -54,18 +54,11 @@ start()->
 start(_Type, _StartArgs) ->
     ID = get(access, "AMAZON_ACCESS_KEY_ID"),
     Secret = get(secret, "AMAZON_SECRET_ACCESS_KEY"),
+    MaxSessions = param(max_sessions, 100),
+    MaxPipeline = param(max_pipeline_size, 20),
     SSL = param(ssl, false),
     N = param(workers, 1),
-    Event = param(event_handler, file_events),
-    Memcached = param(memcached, false),
-    UseMemcached = case Memcached of
-        false ->
-            false;
-        FileName -> %ketama filename
-            application:set_env(merle, file, FileName),
-            merle:start(),
-            true
-    end,
+    EventHandler = param(event_handler, none),
     random:seed(),
     Timeout = param(timeout, ?TIMEOUT),
     Port = if SSL == true -> 
@@ -73,19 +66,21 @@ start(_Type, _StartArgs) ->
             443;
         true -> 80
     end,
-    ibrowse:set_max_sessions("erls3.amazonaws.com", Port,100),
-    ibrowse:set_max_pipeline_size("erls3.amazonaws.com", Port,20),
+    ibrowse:set_max_sessions("s3.amazonaws.com", Port,MaxSessions),
+    ibrowse:set_max_pipeline_size("s3.amazonaws.com", Port, MaxPipeline),
     if ID == error orelse Secret == error ->
             {error, "AWS credentials not set. Pass as application parameters or as env variables."};
         true ->
-            R = erls3sup:start_link([ID, Secret, SSL, Timeout, UseMemcached], N),
-            gen_event:add_handler(erls3_events, Event, []),
+            R = erls3sup:start_link([ID, Secret, SSL, Timeout], N),
+            case EventHandler of
+              none -> ok;
+              H -> gen_event:add_handler(erls3_events, EventHandler, [])
+            end,
             R
 	end.
 	
 shutdown() ->
     application:stop(erls3).
-    
 
 link_to(Bucket, Key, Expires)->
     call({link_to, Bucket, Key, Expires} ).
