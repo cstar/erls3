@@ -56,6 +56,7 @@ start(_Type, _StartArgs) ->
     Secret = get(secret, "AMAZON_SECRET_ACCESS_KEY"),
     SSL = param(ssl, false),
     N = param(workers, 1),
+    Event = param(event_handler, file_events),
     Memcached = param(memcached, false),
     UseMemcached = case Memcached of
         false ->
@@ -77,7 +78,9 @@ start(_Type, _StartArgs) ->
     if ID == error orelse Secret == error ->
             {error, "AWS credentials not set. Pass as application parameters or as env variables."};
         true ->
-            erls3sup:start_link([ID, Secret, SSL, Timeout, UseMemcached], N)
+            R = erls3sup:start_link([ID, Secret, SSL, Timeout, UseMemcached], N),
+            gen_event:add_handler(erls3_events, Event, []),
+            R
 	end.
 	
 shutdown() ->
@@ -175,7 +178,7 @@ get_objects(Bucket, Options)->
 
 % Fun = fun(Bucket, {Key, Content, Headers})
 get_objects(Bucket, Options, Fun)->
-    {ok, Objects} = list_objects(Bucket, Options),
+    {ok, {Objects, _}} = list_objects(Bucket, Options),
     pmap(fun get_object/3,Objects, Bucket, Fun).
       
 get_object({object_info, {"Key", Key}, _, _, _}, Bucket, Fun)->
@@ -273,7 +276,10 @@ wait_result() ->
         {'EXIT', Reason} -> exit(Reason);
 	    {pmap, _Pid,Result} -> Result
     end.
-    
+
+notify(Event)->
+  gen_event:notify(erls3_events, Event).
+
 -ifdef(EUNIT).
 
 erls3_test()->
