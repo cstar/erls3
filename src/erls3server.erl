@@ -8,7 +8,7 @@
 -module(erls3server).
 
 -behaviour(gen_server).
--define(TIMEOUT, 40000).
+-define(TIMEOUT, 400000 ).
 %%--------------------------------------------------------------------
 %% External exports
 %%--------------------------------------------------------------------
@@ -407,6 +407,7 @@ genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Tim
 		        {"Date", Date } 
 	            | OriginalHeaders ],
     Options = buildOptions(Contents, ContentType, SSL), 
+    erls3:notify([{method, Method}, {bucket, Bucket}, {key, Path}, {options, Options}]),
     %error_logger:info_report([{method, Method}, {bucket, Bucket}, {key, Path}, {options, Options}]),
     case get_fd(ToFile, [write, delayed_write, raw]) of
         {error, R} ->

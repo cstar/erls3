@@ -33,7 +33,11 @@ start_link(Params, N) ->
 
 init([Params, N]) ->
     {ok, {{one_for_one, N+1, ?DEFAULT_START_INTERVAL},
-	  lists:map(
+	  [{0,{gen_event, start_link, [{local, erls3_events}]},
+		     transient,
+		     brutal_kill,
+		     worker,
+		     [erls3_events]} | lists:map(
 	    fun(I) ->
 		    {I,
 		     {erls3server, start_link, [Params]},
@@ -41,12 +45,12 @@ init([Params, N]) ->
 		     brutal_kill,
 		     worker,
 		     [erls3server]}
-	    end, lists:seq(1, N))}}.
+	    end, lists:seq(1, N))]}}.
 
 get_pids() ->
     [Child ||
-	{_Id, Child, _Type, _Modules} <- supervisor:which_children(?MODULE),
-	Child /= undefined].
+	{Id, Child, _Type, _Modules} <- supervisor:which_children(?MODULE),
+	Child /= undefined, Id /= 0].
 
 get_random_pid() ->
     Pids = get_pids(),
