@@ -178,7 +178,7 @@ get_objects(Bucket, Options)->
 
 % Fun = fun(Bucket, {Key, Content, Headers})
 get_objects(Bucket, Options, Fun)->
-    {ok, Objects} = list_objects(Bucket, Options),
+    {ok, {Objects, _}} = list_objects(Bucket, Options),
     pmap(fun get_object/3,Objects, Bucket, Fun).
       
 get_object({object_info, {"Key", Key}, _, _, _}, Bucket, Fun)->
