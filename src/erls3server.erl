@@ -217,15 +217,15 @@ handle_info({ibrowse_async_response,RequestId,Body },State = #state{pending=P}) 
 	end;
 handle_info({ibrowse_async_response_end,RequestId}, State = #state{pending=P})->
     case gb_trees:lookup(RequestId,P) of
-		{value,#request{started=_Started, to_file=Fd}=R} -> 
+		{value,#request{started=Started, to_file=Fd, opts=Opts}=R} -> 
 		    if Fd /= false ->
 		        file:close(Fd);
 		    true ->
 		        ok
 		    end,
 		    handle_http_response(R),
-		    %io:format("Query took ~p ms~n", [timer:now_diff(now(), Started)/1000]),
-			{noreply,State#state{pending=gb_trees:delete(RequestId, P)}};
+		    erls3:notify([{time, timer:now_diff(now(), Started)/1000 }| Opts]),
+			  {noreply,State#state{pending=gb_trees:delete(RequestId, P)}};
 		none -> {noreply,State}
 			%% the requestid isn't here, probably the request was deleted after a timeout
 	end;
@@ -369,7 +369,7 @@ genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Tim
 		        {"Date", Date } 
 	            | OriginalHeaders ],
     Options = buildOptions(Contents, ContentType, SSL), 
-    erls3:notify([{method, Method}, {bucket, Bucket}, {key, Path}, {options, Options}]),
+    Params = [{method, Method}, {bucket, Bucket}, {key, Path}, {options, Options}],
     %error_logger:info_report([{method, Method}, {bucket, Bucket}, {key, Path}, {options, Options}]),
     case get_fd(ToFile, [write, delayed_write, raw]) of
         {error, R} ->
@@ -377,7 +377,7 @@ genericRequest(From, #state{ssl=SSL, access_key=AKI, secret_key=SAK, timeout=Tim
         Fd ->
             case ibrowse:send_req(Url, Headers,  Method, Contents,Options, Timeout) of
                 {ibrowse_req_id,RequestId} ->
-                    Pendings = gb_trees:insert(RequestId,#request{pid=From, to_file=Fd, started=now(), callback=Callback},P),
+                    Pendings = gb_trees:insert(RequestId,#request{pid=From, to_file=Fd, opts=Params, started=now(),  callback=Callback},P),
                     {noreply, State#state{pending=Pendings}};
                 {ok, "200", H, B}->
                    {reply, {ok, H, Callback(B, H)}, State};
