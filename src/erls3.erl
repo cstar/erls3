@@ -9,6 +9,7 @@
 
 -behaviour(application).
 -define(TIMEOUT, 15000).
+-define(MAX_RETRIES, 6).
 %%--------------------------------------------------------------------
 %% External exports
 %%--------------------------------------------------------------------
@@ -219,20 +220,23 @@ stop(_State) ->
 
 call(M)->
     call(M, 0).
-
+call(_M, ?MAX_RETRIES)->
+  {error, max_retries_reached};
+  
 call(M, Retries)->
     Pid = erls3sup:get_random_pid(),
     case gen_server:call(Pid, M, infinity) of
       retry -> 
-          Sleep = random:uniform(trunc(math:pow(4, Retries)*10)),
+          Sleep = random:uniform(trunc(math:pow(4, Retries)*100)),
           timer:sleep(Sleep),
           call(M, Retries + 1);   
      {timeout, _} ->
-         Sleep = random:uniform(trunc(math:pow(4, Retries)*10)),
+         Sleep = random:uniform(trunc(math:pow(4, Retries)*100)),
           timer:sleep(Sleep),
           call(M, Retries + 1);
       R -> R
-  end.  
+  end.
+
 %%%%% Internal API stuff %%%%%%%%%
 get(Atom, Env)->
     case application:get_env(Atom) of
