@@ -38,6 +38,7 @@
 	  copy/4 ]).
 
 
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
@@ -75,7 +76,7 @@ start(_Type, _StartArgs) ->
             R = erls3sup:start_link([ID, Secret, SSL, Timeout], N),
             case EventHandler of
               none -> ok;
-              H -> gen_event:add_handler(erls3_events, EventHandler, [])
+              _H -> gen_event:add_handler(erls3_events, EventHandler, [])
             end,
             R
 	end.
