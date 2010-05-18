@@ -8,3 +8,8 @@ bin/connect_local
 bin/start_erl_local
 bin/start_local
 erl_crash.dump
+ebin/erls3.beam
+ebin/erls3server.beam
+ebin/erls3sup.beam
+ebin/erls3util.beam
+ebin/file_events.beam
