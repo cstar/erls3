@@ -28,10 +28,6 @@ Requirements
 
 - An Amazon Web Services account - see http://www.amazonaws.com
 
-- ibrowse (http://github.com/cstar/ibrowse/tree/master)
-
-- rake and ruby
-
 - optionally : merle and ketama for caching
     merle is available here : http://github.com/cstar/merle/tree/master
     libketama is available here : http://www.audioscrobbler.net/development/ketama/
