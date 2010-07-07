@@ -106,6 +106,7 @@ set_versioning(Bucket, Enable)->
     %error_logger:info_report([{body, B}, {header, Header}])
     ok
   end}).
+
 get_versioning(Bucket)->
   case read_object(Bucket, "?versioning") of 
     {ok, {Body, _Header}}->
@@ -124,20 +125,35 @@ get_versioning(Bucket)->
     Error ->
       Error
   end.
-  
+
+%% @doc Create a bucket  
 create_bucket (Name) -> 
     call({put, Name} ).
+
+%% @doc Delete an empty bucket
 delete_bucket (Name) -> 
     call({delete, Name} ).
+
+%% @doc List all buckets
 list_buckets ()      -> 
     call({listbuckets}).
 
+%% @doc Write content of a file
 write_from_file(Bucket, Key, Filename, ContentType, Metadata)->
     call({from_file, Bucket, Key,Filename, ContentType, Metadata}).
     
+%% @doc Read content to file
 read_to_file(Bucket, Key, Filename)->
     call({to_file, Bucket, Key, Filename}).
-    
+
+%% @doc Read a serialized erlang data
+read_term(Bucket, Key)->
+    case read_object (Bucket, Key) of
+        {ok, {B, H}} -> {ok, {binary_to_term(B), H}};
+        E -> E
+    end.
+
+%% @doc Write serialized erlang data
 write_term(Bucket, Key, Term)->
     write_object (Bucket, Key,term_to_binary(Term), "application/poet", []).
 
@@ -147,15 +163,11 @@ write_object(Bucket, Key, Data, ContentType)->
 write_object (Bucket, Key, Data, ContentType, Metadata) -> 
     call({put, Bucket, Key, Data, ContentType, Metadata}).
 
-read_term(Bucket, Key)->
-    case read_object (Bucket, Key) of
-        {ok, {B, H}} -> {ok, {binary_to_term(B), H}};
-        E -> E
-    end.
-
+%% @edoc Copy data to an other place
 copy(SrcBucket, SrcKey, DestBucket, DestKey)->
   call({copy, DestBucket, DestKey,[{"x-amz-copy-source", "/"++SrcBucket++"/" ++ SrcKey}]}).
 
+%% @edoc Fetch metadata of an object
 head(Bucket, Key)->
     call({head, Bucket, Key}).
 
@@ -165,11 +177,12 @@ read_object (Bucket, Key, Etag) ->
 read_object (Bucket, Key) -> 
     call({get, Bucket, Key}).
     
+%% @edoc Delete and object
 delete_object (Bucket, Key) -> 
     call({delete, Bucket, Key}).
 
     
-% Gets objects in // from S3.
+%% @doc Gets objects in // from S3.
 %% option example: [{delimiter, "/"},{maxkeys,10},{prefix,"/foo"}]
 get_objects(Bucket, Options)->
   get_objects(Bucket, Options, fun(_B, Obj)-> Obj end).
@@ -189,6 +202,7 @@ list_objects (Bucket, Options ) ->
     call({list, Bucket, Options }).
 list_objects (Bucket) -> 
     list_objects( Bucket, [] ).
+
 
 
 %  Sample policy file, 
