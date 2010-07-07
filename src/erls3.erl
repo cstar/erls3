@@ -35,7 +35,8 @@
 	  read_to_file/3,
 	  set_versioning/2,
 	  get_versioning/1,
-	  copy/4 ]).
+	  copy/4,
+		purge_bucket/1 ]).
 
 
 
@@ -279,6 +280,19 @@ wait_result() ->
 
 notify(Event)->
   gen_event:notify(erls3_events, Event).
+
+%purge all node in a bucket
+purge_bucket(Bucket) ->
+	{ok, {Nodes, _Token_follow}} = erls3:list_objects(Bucket),
+	%error_logger:warning_report(Nodes),
+	vaccum(Bucket, Nodes).
+
+vaccum(Bucket, []) ->
+	ok;
+vaccum(Bucket, [#object_info{key = Key} | Rest]) ->
+	erls3:delete_object(Bucket, Key),
+	vaccum(Bucket, Rest).
+
 
 -ifdef(EUNIT).
 
