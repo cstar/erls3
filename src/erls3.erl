@@ -36,9 +36,8 @@
 	  set_versioning/2,
 	  get_versioning/1,
 	  copy/4,
-		purge_bucket/1 ]).
-
-
+	  is_empty_bucket/1,
+	  purge_bucket/1 ]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -204,8 +203,9 @@ list_objects (Bucket, Options ) ->
 list_objects (Bucket) -> 
     list_objects( Bucket, [] ).
 
+%% @doc Is this bucket empty?
 is_empty_bucket(Bucket) ->
-	case list_objects(Bucket, [{delimiter, "/"},{maxkeys,10},{prefix,"/"}]) of
+	case list_objects(Bucket, [{delimiter, "/"},{maxkeys,1},{prefix,"/"}]) of
 		{ok,{[], _}} -> true;
 		_ -> false
 	end.
