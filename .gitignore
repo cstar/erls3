@@ -13,3 +13,4 @@ ebin/erls3server.beam
 ebin/erls3sup.beam
 ebin/erls3util.beam
 ebin/file_events.beam
+.eunit
