@@ -208,8 +208,9 @@ handle_info({ibrowse_async_response,RequestId,Body },State = #state{pending=P}) 
 		    case file:write(Fd,Body) of
 	            ok ->
 	                ok;
-	            {error, Reason} ->
-	                {error, {file_write_error, Reason}} %%TODO use error and cancel transfer.
+	            {error, _Reason} ->
+	                error
+	                %{error, {file_write_error, Reason}} %%TODO use error and cancel transfer.
             end,
 		    {noreply,State};
 		none -> {noreply,State}
@@ -415,13 +416,18 @@ parseBucketListXml (XmlDoc, _H) ->
 		      [Child] = xmerl_xpath:string( Attribute, Node ),
 		      {Attribute, erls3util:string_value( Child )}
 	      end,
-
+	      
     NodeToRecord = fun (Node) ->
-			   #object_info{ 
-			 key =          GetObjectAttribute(Node,"Key"),
-			 lastmodified = GetObjectAttribute(Node,"LastModified"),
-			 etag =         GetObjectAttribute(Node,"ETag"),
-			 size =         GetObjectAttribute(Node,"Size")}
+      {_, Key } = GetObjectAttribute(Node,"Key"),
+      {_, LastModified } = GetObjectAttribute(Node,"LastModified"),
+      {_, ETag } = GetObjectAttribute(Node,"ETag"),
+      {_, Size } = GetObjectAttribute(Node,"Size"),
+			#object_info{ 
+			 key =          Key,
+			 lastmodified = LastModified,
+			 etag =         ETag,
+			 size =         Size
+			 }
 		   end,
     Prefixes       = xmerl_xpath:string("//CommonPrefixes/Prefix/text()", Xml),
     {lists:map( NodeToRecord, ContentNodes ), lists:map(fun (#xmlText{value=T}) -> T end, Prefixes)}.

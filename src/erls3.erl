@@ -42,7 +42,7 @@
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
-
+-include("erls3.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
 
 start()->
@@ -59,7 +59,7 @@ start(_Type, _StartArgs) ->
     MaxSessions = param(max_sessions, 100),
     MaxPipeline = param(max_pipeline_size, 20),
     SSL = param(ssl, false),
-    N = param(workers, 1),
+    N = param(workers, 20),
     EventHandler = param(event_handler, none),
     random:seed(),
     Timeout = param(timeout, ?TIMEOUT),
@@ -178,7 +178,7 @@ get_objects(Bucket, Options, Fun)->
     {ok, {Objects, _}} = list_objects(Bucket, Options),
     pmap(fun get_object/3,Objects, Bucket, Fun).
       
-get_object({object_info, {"Key", Key}, _, _, _}, Bucket, Fun)->
+get_object(#object_info{key=Key}, Bucket, Fun)->
   case call({get_with_key, Bucket, Key}) of
     {ok, Obj} -> Fun(Bucket, Obj);
     Error -> Error
