@@ -1,5 +1,12 @@
 -module(erls3util).
--export([collapse/1, string_join/2, join/1,filter_keyset/2, string_value/1, unix_time/1, url_encode/1]).
+-export([
+	collapse/1,
+	string_join/2,
+	join/1,
+	filter_keyset/2,
+	string_value/1,
+	unix_time/1,
+	url_encode/1]).
 -include("erls3.hrl").
 -include_lib("xmerl/include/xmerl.hrl").
     
