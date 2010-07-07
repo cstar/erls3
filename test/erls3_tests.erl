@@ -18,5 +18,5 @@ write_test() ->
 	%{error, not_found, _} = erls3:write_object("this is not a bucket", "test.txt", "hello world", "plain/text", [{"x-amz-beuha", "aussi"}]),
 	{ok, Hash} = erls3:write_object(?BUCKET, "test.txt", "hello world", "plain/text", [{"x-amz-beuha", "aussi"}]).
 	
-stop() -> erls3:clean_bucket(?BUCKET).
+%shutdown() -> erls3:clean_bucket(?BUCKET).
 	
