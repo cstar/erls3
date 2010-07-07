@@ -8,6 +8,7 @@
 start() ->
 	erls3:start(),
 	erls3:clean_bucket(?BUCKET),
+	?assertEqual(true, erls3:is_empty_bucket(?BUCKET)),
 	{ok, ok} = erls3:create_bucket(?BUCKET).
 
 %connection_test() ->
