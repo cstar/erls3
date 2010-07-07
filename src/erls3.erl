@@ -23,7 +23,7 @@
 
 -compile(export_all).
 -export([
-      read_term/2, write_term/3,
+    read_term/2, write_term/3,
 	  list_buckets/0, create_bucket/1, 
 	  delete_bucket/1, link_to/3, 
 	  head/2, policy/1, get_objects/2, get_objects/3,
