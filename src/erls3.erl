@@ -14,7 +14,7 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([
-     start/0,
+	 start/0,
 	 start/2,
 	 shutdown/0,
 	 stop/1
@@ -159,24 +159,26 @@ write_term(Bucket, Key, Term)->
 write_object(Bucket, Key, Data, ContentType)->
     write_object (Bucket, Key, Data, ContentType, []).
 
+%% @doc Write object
 write_object (Bucket, Key, Data, ContentType, Metadata) -> 
     call({put, Bucket, Key, Data, ContentType, Metadata}).
 
-%% @edoc Copy data to an other place
+%% @doc Copy data to an other place
 copy(SrcBucket, SrcKey, DestBucket, DestKey)->
   call({copy, DestBucket, DestKey,[{"x-amz-copy-source", "/"++SrcBucket++"/" ++ SrcKey}]}).
 
-%% @edoc Fetch metadata of an object
+%% @doc Fetch metadata of an object
 head(Bucket, Key)->
     call({head, Bucket, Key}).
 
+%% @doc Read an object
 read_object (Bucket, Key, Etag) -> 
     call({get, Bucket, Key, Etag}).
     
 read_object (Bucket, Key) -> 
     call({get, Bucket, Key}).
     
-%% @edoc Delete and object
+%% @doc Delete and object
 delete_object (Bucket, Key) -> 
     call({delete, Bucket, Key}).
 
@@ -186,6 +188,7 @@ delete_object (Bucket, Key) ->
 get_objects(Bucket, Options)->
   get_objects(Bucket, Options, fun(_B, Obj)-> Obj end).
 
+%% @doc Get objects with a filter
 % Fun = fun(Bucket, {Key, Content, Headers})
 get_objects(Bucket, Options, Fun)->
     {ok, {Objects, _}} = list_objects(Bucket, Options),
@@ -196,6 +199,8 @@ get_object(#object_info{key=Key}, Bucket, Fun)->
     {ok, Obj} -> Fun(Bucket, Obj);
     Error -> Error
   end.
+
+%% @doc List objects of a bucket
 %% option example: [{delimiter, "/"},{maxkeys,10},{prefix,"/foo"}]
 list_objects (Bucket, Options ) -> 
     call({list, Bucket, Options }).
@@ -242,9 +247,10 @@ stop(_State) ->
 
 call(M)->
     call(M, 0).
+
+%% @doc Ask something to S3
 call(_M, ?MAX_RETRIES)->
   {error, max_retries_reached};
-  
 call(M, Retries)->
     Pid = erls3sup:get_random_pid(),
     case gen_server:call(Pid, M, infinity) of
@@ -253,7 +259,7 @@ call(M, Retries)->
           timer:sleep(Sleep),
           call(M, Retries + 1);   
      {timeout, _} ->
-         Sleep = random:uniform(trunc(math:pow(4, Retries)*100)),
+          Sleep = random:uniform(trunc(math:pow(4, Retries)*100)),
           timer:sleep(Sleep),
           call(M, Retries + 1);
       R -> R
