@@ -200,9 +200,15 @@ get_object(#object_info{key=Key}, Bucket, Fun)->
 %% option example: [{delimiter, "/"},{maxkeys,10},{prefix,"/foo"}]
 list_objects (Bucket, Options ) -> 
     call({list, Bucket, Options }).
+
 list_objects (Bucket) -> 
     list_objects( Bucket, [] ).
 
+is_empty_bucket(Bucket) ->
+	case list_objects(Bucket, [{delimiter, "/"},{maxkeys,10},{prefix,"/"}]) of
+		{ok,{[], _}} -> true;
+		_ -> false
+	end.
 
 
 %  Sample policy file, 
