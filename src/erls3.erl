@@ -313,7 +313,7 @@ purge_bucket(Bucket) ->
 	%error_logger:warning_report(Nodes),
 	vaccum(Bucket, Nodes).
 
-vaccum(Bucket, []) ->
+vaccum(_Bucket, []) ->
 	ok;
 vaccum(Bucket, [#object_info{key = Key} | Rest]) ->
 	erls3:delete_object(Bucket, Key),
