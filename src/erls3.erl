@@ -14,7 +14,7 @@
 %% External exports
 %%--------------------------------------------------------------------
 -export([
-     start/0,
+	 start/0,
 	 start/2,
 	 shutdown/0,
 	 stop/1
@@ -35,9 +35,9 @@
 	  read_to_file/3,
 	  set_versioning/2,
 	  get_versioning/1,
-	  copy/4 ]).
-
-
+	  copy/4,
+	  is_empty_bucket/1,
+	  purge_bucket/1 ]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -105,6 +105,7 @@ set_versioning(Bucket, Enable)->
     %error_logger:info_report([{body, B}, {header, Header}])
     ok
   end}).
+
 get_versioning(Bucket)->
   case read_object(Bucket, "?versioning") of 
     {ok, {Body, _Header}}->
@@ -123,56 +124,71 @@ get_versioning(Bucket)->
     Error ->
       Error
   end.
-  
+
+%% @doc Create a bucket  
 create_bucket (Name) -> 
     call({put, Name} ).
+
+%% @doc Delete an empty bucket
 delete_bucket (Name) -> 
     call({delete, Name} ).
+
+%% @doc List all buckets
 list_buckets ()      -> 
     call({listbuckets}).
 
+%% @doc Write content of a file
 write_from_file(Bucket, Key, Filename, ContentType, Metadata)->
     call({from_file, Bucket, Key,Filename, ContentType, Metadata}).
     
+%% @doc Read content to file
 read_to_file(Bucket, Key, Filename)->
     call({to_file, Bucket, Key, Filename}).
-    
-write_term(Bucket, Key, Term)->
-    write_object (Bucket, Key,term_to_binary(Term), "application/poet", []).
 
-write_object(Bucket, Key, Data, ContentType)->
-    write_object (Bucket, Key, Data, ContentType, []).
-
-write_object (Bucket, Key, Data, ContentType, Metadata) -> 
-    call({put, Bucket, Key, Data, ContentType, Metadata}).
-
+%% @doc Read a serialized erlang data
 read_term(Bucket, Key)->
     case read_object (Bucket, Key) of
         {ok, {B, H}} -> {ok, {binary_to_term(B), H}};
         E -> E
     end.
 
+%% @doc Write serialized erlang data
+write_term(Bucket, Key, Term)->
+    write_object (Bucket, Key,term_to_binary(Term), "application/poet", []).
+
+write_object(Bucket, Key, Data, ContentType)->
+    write_object (Bucket, Key, Data, ContentType, []).
+
+%% @doc Write object
+write_object (Bucket, Key, Data, ContentType, Metadata) -> 
+    call({put, Bucket, Key, Data, ContentType, Metadata}).
+
+%% @doc Copy data to an other place
 copy(SrcBucket, SrcKey, DestBucket, DestKey)->
   call({copy, DestBucket, DestKey,[{"x-amz-copy-source", "/"++SrcBucket++"/" ++ SrcKey}]}).
 
+%% @doc Fetch metadata of an object
 head(Bucket, Key)->
     call({head, Bucket, Key}).
 
+%% @doc Read an object
 read_object (Bucket, Key, Etag) -> 
     call({get, Bucket, Key, Etag}).
     
 read_object (Bucket, Key) -> 
     call({get, Bucket, Key}).
     
+%% @doc Delete and object
 delete_object (Bucket, Key) -> 
     call({delete, Bucket, Key}).
 
     
-% Gets objects in // from S3.
+%% @doc Gets objects in // from S3.
 %% option example: [{delimiter, "/"},{maxkeys,10},{prefix,"/foo"}]
 get_objects(Bucket, Options)->
   get_objects(Bucket, Options, fun(_B, Obj)-> Obj end).
 
+%% @doc Get objects with a filter
 % Fun = fun(Bucket, {Key, Content, Headers})
 get_objects(Bucket, Options, Fun)->
     {ok, {Objects, _}} = list_objects(Bucket, Options),
@@ -183,11 +199,21 @@ get_object(#object_info{key=Key}, Bucket, Fun)->
     {ok, Obj} -> Fun(Bucket, Obj);
     Error -> Error
   end.
+
+%% @doc List objects of a bucket
 %% option example: [{delimiter, "/"},{maxkeys,10},{prefix,"/foo"}]
 list_objects (Bucket, Options ) -> 
     call({list, Bucket, Options }).
+
 list_objects (Bucket) -> 
     list_objects( Bucket, [] ).
+
+%% @doc Is this bucket empty?
+is_empty_bucket(Bucket) ->
+	case list_objects(Bucket, [{delimiter, "/"},{maxkeys,1},{prefix,"/"}]) of
+		{ok,{[], _}} -> true;
+		_ -> false
+	end.
 
 
 %  Sample policy file, 
@@ -221,9 +247,10 @@ stop(_State) ->
 
 call(M)->
     call(M, 0).
+
+%% @doc Ask something to S3
 call(_M, ?MAX_RETRIES)->
   {error, max_retries_reached};
-  
 call(M, Retries)->
     Pid = erls3sup:get_random_pid(),
     case gen_server:call(Pid, M, infinity) of
@@ -232,7 +259,7 @@ call(M, Retries)->
           timer:sleep(Sleep),
           call(M, Retries + 1);   
      {timeout, _} ->
-         Sleep = random:uniform(trunc(math:pow(4, Retries)*100)),
+          Sleep = random:uniform(trunc(math:pow(4, Retries)*100)),
           timer:sleep(Sleep),
           call(M, Retries + 1);
       R -> R
@@ -279,6 +306,19 @@ wait_result() ->
 
 notify(Event)->
   gen_event:notify(erls3_events, Event).
+
+%purge all node in a bucket
+purge_bucket(Bucket) ->
+	{ok, {Nodes, _Token_follow}} = erls3:list_objects(Bucket),
+	%error_logger:warning_report(Nodes),
+	vaccum(Bucket, Nodes).
+
+vaccum(_Bucket, []) ->
+	ok;
+vaccum(Bucket, [#object_info{key = Key} | Rest]) ->
+	erls3:delete_object(Bucket, Key),
+	vaccum(Bucket, Rest).
+
 
 -ifdef(EUNIT).
 
